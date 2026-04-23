@@ -1,26 +1,198 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ═══════════════════════════════════════════════
+   WHISPERER DESIGN SYSTEM — GAME THEME
+   Flat edges, Poppins, Dark luxury
+═══════════════════════════════════════════════ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Color Tokens */
+  --color-background: #0A0A0A;
+  --color-surface: #121212;
+  --color-card: #181818;
+  --color-border: #2A2A2A;
+  --color-primary: #6C5CE7;
+  --color-secondary: #00D1B2;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #A1A1AA;
+  --color-success: #22C55E;
+  --color-danger: #FF4D4F;
+  --color-warning: #F59E0B;
+  --color-info: #3B82F6;
+
+  /* Game accent overlays */
+  --color-glow-primary: rgba(108,92,231,0.4);
+  --color-glow-secondary: rgba(0,209,178,0.3);
+  --color-glow-danger: rgba(255,77,79,0.4);
+
+  /* Badge colors */
+  --color-badge-open: #3B82F6;
+  --color-badge-reviewed: #22C55E;
+  --color-badge-urgent: #FF4D4F;
+  --color-badge-pending: #F59E0B;
+
+  /* Typography */
+  --font-sans: 'Poppins', system-ui, sans-serif;
+
+  /* Spacing — 8px grid */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+
+  /* Border Radius — FLAT (game theme = sharp) */
+  --radius-none: 0px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 6px rgba(0,0,0,0.5);
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.6);
+  --shadow-primary: 0 0 20px rgba(108,92,231,0.3);
+  --shadow-secondary: 0 0 20px rgba(0,209,178,0.2);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ── Base Reset ──────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #0A0A0A;
+  color: #FFFFFF;
+  font-family: 'Poppins', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* ── Scrollbar ───────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0A0A0A; }
+::-webkit-scrollbar-thumb { background: #2A2A2A; }
+::-webkit-scrollbar-thumb:hover { background: #6C5CE7; }
+
+/* ── Game Grid Overlay (subtle background texture) ── */
+.game-grid {
+  background-image:
+    linear-gradient(rgba(108,92,231,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(108,92,231,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Scanline effect for headers ─────────── */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── Glow animations ─────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(108,92,231,0.4); }
+  50% { box-shadow: 0 0 20px rgba(108,92,231,0.7); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes slow-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-slow-spin { animation: slow-spin 20s linear infinite; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-slide-in-right { animation: slide-in-right 0.25s ease-out forwards; }
+.animate-fade-in-up { animation: fade-in-up 0.2s ease-out forwards; }
+
+/* ── Skeleton shimmer ──────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, #1A1A1A 25%, #252525 50%, #1A1A1A 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+/* ── Focus ring (accessibility) ─────────── */
+.focus-ring:focus-visible {
+  outline: 2px solid #6C5CE7;
+  outline-offset: 2px;
+}
+
+/* ── Game corner clip ────────────────────── */
+.clip-corner-tl {
+  clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
+}
+.clip-corner-tr {
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+}
+.clip-corner-all {
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+}
+
+/* ── Sidebar transitions ─────────────────── */
+.sidebar-item {
+  transition: background 0.15s ease, border-left-color 0.15s ease;
+  border-left: 2px solid transparent;
+}
+.sidebar-item:hover {
+  background: rgba(108,92,231,0.08);
+  border-left-color: rgba(108,92,231,0.4);
+}
+.sidebar-item.active {
+  background: rgba(108,92,231,0.15);
+  border-left-color: #6C5CE7;
+}
+
+/* ── Table row hover ─────────────────────── */
+.table-row-hover:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+/* ── Progress bar ────────────────────────── */
+@keyframes progress-stripe {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+.progress-stripe {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 10px,
+    rgba(255,255,255,0.1) 10px,
+    rgba(255,255,255,0.1) 20px
+  );
+  background-size: 40px 40px;
+  animation: progress-stripe 1s linear infinite;
+}
+
+/* ── Modal backdrop ──────────────────────── */
+.modal-backdrop {
+  backdrop-filter: blur(6px);
+  background: rgba(0,0,0,0.75);
 }

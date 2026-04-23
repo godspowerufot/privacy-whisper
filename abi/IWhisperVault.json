@@ -1,0 +1,68 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IWhisperVault",
+  "sourceName": "contracts/interfaces/IWhispererSystem.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "caseId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getWhisperCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "caseId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "externalEuint256",
+          "name": "encryptedMessage",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "externalEuint256",
+          "name": "encryptedFileHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "externalEaddress",
+          "name": "encryptedSubmitter",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "externalEuint8",
+          "name": "priority",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes",
+          "name": "inputProof",
+          "type": "bytes"
+        }
+      ],
+      "name": "submitWhisper",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}
