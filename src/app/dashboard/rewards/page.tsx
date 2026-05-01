@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/ui/modal";
 import { 
   Gift, 
   CheckCircle2, 
@@ -16,43 +15,112 @@ import {
   Terminal,
   ExternalLink,
   Search,
-  Filter
+  Filter,
+  Loader2
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useRewardManager, useWhisperCaseManager } from "@/hooks/useContracts";
+import { useAccount } from "wagmi";
+import { ethers } from "ethers";
 
 interface Transaction {
   id: string;
   type: "payment" | "reward";
   caseId: string;
   caseTitle: string;
-  amount: number;
-  currency: "USD" | "BTC" | "XMR";
-  status: "completed" | "pending" | "failed";
+  amount: string; // Changed to string for ETH
+  status: "completed" | "pending";
   timestamp: string;
   recipientOrSender: string;
 }
 
-const JOURNALIST_TXS: Transaction[] = [
-  { id: "TX-9902", type: "payment", caseId: "C-013", caseTitle: "Police Misconduct Investigation", amount: 2500, currency: "USD", status: "completed", timestamp: "2026-04-12 14:30", recipientOrSender: "Anon-7821" },
-  { id: "TX-9841", type: "payment", caseId: "C-014", caseTitle: "Government Procurement Leak", amount: 5000, currency: "USD", status: "completed", timestamp: "2026-04-10 09:15", recipientOrSender: "Source A" },
-  { id: "TX-9721", type: "payment", caseId: "C-011", caseTitle: "Environmental Violation Report", amount: 1800, currency: "USD", status: "pending", timestamp: "2026-04-08 18:45", recipientOrSender: "Source C" },
-  { id: "TX-9610", type: "payment", caseId: "C-008", caseTitle: "Unveiling Shadow Banking", amount: 0.12, currency: "BTC", status: "completed", timestamp: "2026-04-02 22:10", recipientOrSender: "Anon-4420" },
-];
-
-const WHISPERER_TXS: Transaction[] = [
-  { id: "TX-9902", type: "reward", caseId: "C-013", caseTitle: "Police Misconduct Investigation", amount: 2500, currency: "USD", status: "completed", timestamp: "2026-04-12 14:30", recipientOrSender: "Elena Fischer" },
-  { id: "TX-9655", type: "reward", caseId: "C-009", caseTitle: "Corporate Tax Evasion Leak", amount: 0.05, currency: "BTC", status: "completed", timestamp: "2026-04-05 11:20", recipientOrSender: "Global Investigations" },
-  { id: "TX-9501", type: "reward", caseId: "C-005", caseTitle: "Election Fraud Discovery", amount: 3200, currency: "USD", status: "completed", timestamp: "2026-03-28 15:40", recipientOrSender: "Marcus Thorne" },
-];
-
-const currencySymbol = { USD: "$", BTC: "₿", XMR: "ɱ" } as const;
-
 export default function RewardsPage() {
   const { role } = useAuth();
+  const { address } = useAccount();
   const isJournalist = role === "journalist";
-  const transactions = isJournalist ? JOURNALIST_TXS : WHISPERER_TXS;
   
+  const rewardManager = useRewardManager();
+  const caseManager = useWhisperCaseManager();
+
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const fetchTransactions = useCallback(async () => {
+    if (!rewardManager || !caseManager || !address) return;
+
+    try {
+      setIsLoading(true);
+
+      // 1. Fetch Case Titles for context
+      const nextIdBig = await caseManager.nextCaseId();
+      const nextId = Number(nextIdBig);
+      const caseMetadata: Record<string, { title: string; prizePool: string }> = {};
+
+      const casePromises = [];
+      const rewardPromises = [];
+      
+      for (let i = 1; i < nextId; i++) {
+        casePromises.push(caseManager.getCase(i).then((c: any) => ({ caseId: i, caseData: c })).catch(() => null));
+        rewardPromises.push(rewardManager.rewards(i).then((r: any) => ({ caseId: i, rewardData: r })).catch(() => null));
+      }
+      
+      const caseResults = await Promise.all(casePromises);
+      caseResults.forEach((res: any) => {
+        if (res && res.caseData) {
+           caseMetadata[res.caseId.toString()] = {
+             title: res.caseData.title,
+             prizePool: ethers.formatEther(res.caseData.prizePool)
+           };
+        }
+      });
+
+      const rewardResults = await Promise.all(rewardPromises);
+      const approvedTxs: Transaction[] = [];
+      const distributedTxs: Transaction[] = [];
+      
+      rewardResults.forEach((res: any) => {
+        if (res && res.rewardData) {
+          const { caseId, rewardData: r } = res;
+          if (r.approved && !r.paid) {
+            approvedTxs.push({
+               id: `TX-A-${caseId}`,
+               type: "payment",
+               caseId: caseId.toString(),
+               caseTitle: caseMetadata[caseId.toString()]?.title || "Investigation",
+               amount: caseMetadata[caseId.toString()]?.prizePool || "0.00",
+               status: "pending",
+               timestamp: "Recent",
+               recipientOrSender: "Pending Reveal"
+            });
+          } else if (r.approved && r.paid) {
+            distributedTxs.push({
+               id: `TX-D-${caseId}`,
+               type: "payment",
+               caseId: caseId.toString(),
+               caseTitle: caseMetadata[caseId.toString()]?.title || "Investigation",
+               amount: caseMetadata[caseId.toString()]?.prizePool || "0.00",
+               status: "completed",
+               timestamp: "Confirmed",
+               recipientOrSender: "Anonymous Source"
+            });
+          }
+        }
+      });
+
+      // Combine and filter by user-involved cases if journalist
+      const combined = [...distributedTxs, ...approvedTxs].reverse();
+      setTransactions(combined);
+    } catch (err) {
+      console.error("[RewardsPage] Error fetching transactions:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [rewardManager, caseManager, address]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
 
   const filteredTxs = transactions.filter(tx => 
     tx.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -60,31 +128,29 @@ export default function RewardsPage() {
     tx.recipientOrSender.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const totalUSD = transactions
-    .filter(tx => tx.currency === "USD" && tx.status === "completed")
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const totalETH = transactions
+    .filter(tx => tx.status === "completed")
+    .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
 
-  const totalBTC = transactions
-    .filter(tx => tx.currency === "BTC" && tx.status === "completed")
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  const activeBounties = transactions.filter(tx => tx.status === "pending").length;
 
   return (
     <DashboardLayout pageTitle="Rewards & Transactions">
       {/* Metrics Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card variant="metric" 
-          metricLabel={isJournalist ? "Total Paid (USD)" : "Total Earned (USD)"} 
-          metricValue={`$${totalUSD.toLocaleString()}`} 
-          metricDelta={{ value: isJournalist ? "-12% vs last month" : "+24% vs last month", positive: !isJournalist }}
+          metricLabel={isJournalist ? "Total Distributed (ETH)" : "Total Earned (ETH)"} 
+          metricValue={isLoading ? "..." : `${totalETH.toFixed(4)} ETH`} 
+          metricDelta={{ value: "On-chain settlements", positive: true }}
         />
         <Card variant="metric" 
           metricLabel={isJournalist ? "Active Bounties" : "Pending Rewards"} 
-          metricValue={isJournalist ? "12" : "1"} 
+          metricValue={isLoading ? "..." : activeBounties.toString()} 
         />
         <Card variant="metric" 
-          metricLabel="Crypto Assets" 
-          metricValue={`${totalBTC} BTC`} 
-          metricDelta={{ value: "Secure Escrow Active", positive: true }}
+          metricLabel="Escrow Security" 
+          metricValue="ZK-SAFE" 
+          metricDelta={{ value: "Protocol Active", positive: true }}
         />
       </div>
 
@@ -104,11 +170,9 @@ export default function RewardsPage() {
               />
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Button variant="ghost" size="sm" className="flex-1 sm:flex-none border border-[#2A2A2A]">
-                <Filter size={14} className="mr-2" /> Filter
-              </Button>
-              <Button variant="primary" size="sm" className="flex-1 sm:flex-none">
-                Export CSV
+              <Button variant="ghost" size="sm" className="flex-1 sm:flex-none border border-[#2A2A2A]" onClick={fetchTransactions}>
+                {isLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : <Filter size={14} className="mr-2" />} 
+                {isLoading ? "Syncing..." : "Sync Chain"}
               </Button>
             </div>
           </div>
@@ -128,7 +192,16 @@ export default function RewardsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1A1A1A]">
-                {filteredTxs.length > 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-[#555] italic text-xs">
+                      <div className="flex flex-col items-center gap-3">
+                        <Loader2 className="animate-spin text-primary" size={24} />
+                        Syncing with blockchain Ledger...
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredTxs.length > 0 ? (
                   filteredTxs.map((tx) => (
                     <tr key={tx.id} className="group hover:bg-white/[0.02] transition-colors">
                       <td className="px-4 py-4">
@@ -156,13 +229,13 @@ export default function RewardsPage() {
                             <ArrowDownLeft size={14} className="text-[#00D1B2]" />
                           )}
                           <span className={isJournalist ? "text-white" : "text-[#00D1B2]"}>
-                            {currencySymbol[tx.currency]}{tx.currency === "BTC" ? tx.amount : tx.amount.toLocaleString()}
+                            {tx.amount} ETH
                           </span>
                         </div>
                       </td>
                       <td className="px-4 py-4">
                         <Badge 
-                          variant={tx.status === "completed" ? "reviewed" : tx.status === "pending" ? "pending" : "urgent"} 
+                          variant={tx.status === "completed" ? "reviewed" : "pending"} 
                           dot
                         >
                           {tx.status}
@@ -181,7 +254,7 @@ export default function RewardsPage() {
                 ) : (
                   <tr>
                     <td colSpan={7} className="px-4 py-12 text-center text-[#555] italic text-xs">
-                      No transactions found matching your search criteria.
+                      No transactions found on-chain.
                     </td>
                   </tr>
                 )}
@@ -192,8 +265,8 @@ export default function RewardsPage() {
           {/* Bottom Summary */}
           <div className="mt-4 pt-6 border-t border-[#2A2A2A] flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] font-black uppercase tracking-[0.2em] text-[#555]">
             <div className="flex gap-6">
-              <span>Verified Nodes: 12</span>
-              <span>Encrypted Relay: Active</span>
+              <span>Verified Nodes: Active</span>
+              <span>Encrypted Relay: Syncing</span>
             </div>
             <div className="flex items-center gap-2">
               <Shield size={12} className="text-[#6C5CE7]" />
@@ -202,42 +275,6 @@ export default function RewardsPage() {
           </div>
         </div>
       </Card>
-
-      {/* Extra Info Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-        <Card title="Security Protocol">
-          <div className="flex gap-4 p-2">
-            <div className="w-12 h-12 bg-[#6C5CE7]/10 flex items-center justify-center flex-shrink-0">
-              <Shield className="text-[#6C5CE7]" />
-            </div>
-            <div>
-              <p className="text-white text-xs font-bold uppercase mb-1">Zero-Knowledge Payouts</p>
-              <p className="text-[#A1A1AA] text-[10px] leading-relaxed">
-                All rewards are distributed via our proprietary ZK-Safe protocol. Recipient identities remain encrypted and decoupled from the specific leak source.
-              </p>
-            </div>
-          </div>
-        </Card>
-        <Card title="Escrow Terminal">
-          <div className="flex gap-4 p-2">
-            <div className="w-12 h-12 bg-[#00D1B2]/10 flex items-center justify-center flex-shrink-0">
-              <Terminal className="text-[#00D1B2]" />
-            </div>
-            <div>
-              <p className="text-white text-xs font-bold uppercase mb-1">Live Relay Status</p>
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] text-[#555]">NETWORK LATENCY</span>
-                  <span className="text-[9px] text-[#00D1B2]">12ms</span>
-                </div>
-                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00D1B2] w-4/5" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      </div>
     </DashboardLayout>
   );
 }

@@ -62,13 +62,11 @@ export function FileUpload({
         }, 200);
       });
 
-      setUploads((prev) => {
-        const next = [...prev, ...newUploads];
-        onFilesChange?.(next.map((u) => u.file));
-        return next;
-      });
+      const next = [...uploads, ...newUploads];
+      setUploads(next);
+      onFilesChange?.(next.map((u) => u.file));
     },
-    [maxMB, onFilesChange]
+    [maxMB, onFilesChange, uploads]
   );
 
   const remove = (id: string) => {

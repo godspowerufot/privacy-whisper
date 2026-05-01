@@ -47,9 +47,13 @@ contract WhisperCaseManager is ZamaEthereumConfig, IWhisperCaseManager {
     function createCase(
         string calldata title,
         string calldata description,
+        string calldata whisperBrief,
+        string calldata status,
+        string calldata priority,
+        string[] calldata tags,
         externalEuint256 encryptedName,
         bytes calldata inputProof
-    ) external override onlyJournalist returns (uint256) {
+    ) external payable override onlyJournalist returns (uint256) {
         uint256 caseId = nextCaseId++;
 
         euint256 nameEnc = FHE.fromExternal(encryptedName, inputProof);
@@ -61,6 +65,11 @@ contract WhisperCaseManager is ZamaEthereumConfig, IWhisperCaseManager {
             encryptedJournalistName: nameEnc,
             title: title,
             description: description,
+            whisperBrief: whisperBrief,
+            status: status,
+            priority: priority,
+            tags: tags,
+            prizePool: msg.value,
             isOpen: true,
             createdAt: block.timestamp,
             whisperCount: 0

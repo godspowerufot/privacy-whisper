@@ -54,7 +54,8 @@ contract RewardManager is ZamaEthereumConfig, IRewardManager {
             caseId: caseId,
             encryptedAmount: amount,
             approved: true,
-            paid: false
+            paid: false,
+            recipient: address(0)
         });
 
         emit RewardApproved(caseId);
@@ -74,6 +75,7 @@ contract RewardManager is ZamaEthereumConfig, IRewardManager {
         // For this architecture, we assume the journalist/admin provides the revealed address.
 
         r.paid = true;
+        r.recipient = whistleblower;
 
         // Update Stats
         if (address(stats) != address(0)) {

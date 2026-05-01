@@ -16,6 +16,7 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
     IWhisperStats public stats;
 
     mapping(uint256 => Whisper[]) private caseWhispers;
+    Whisper[] private allWhispers;
 
     event WhisperSubmitted(uint256 indexed caseId, uint256 whisperIndex);
     event WhisperRevealRequested(uint256 indexed caseId, uint256 whisperIndex, bytes32 messageHandle);
@@ -36,6 +37,9 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
      */
     function submitWhisper(
         uint256 caseId,
+        string calldata status,
+        bool isUrgent,
+        Attachment[] calldata attachments,
         externalEuint256 encryptedMessage,
         externalEuint256 encryptedFileHash,
         externalEaddress encryptedSubmitter,
@@ -59,14 +63,26 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
         FHE.allowThis(submitterEnc);
         FHE.allowThis(priorityEnc);
 
-        caseWhispers[caseId].push(Whisper({
-            caseId: caseId,
-            encryptedMessage: msgEnc,
-            encryptedFileHash: hashEnc,
-            encryptedSubmitter: submitterEnc,
-            priority: priorityEnc,
-            timestamp: block.timestamp
-        }));
+        // Add to case-specific mapping
+        Whisper storage newWhisper = caseWhispers[caseId].push();
+        
+        // Populate base data
+        newWhisper.caseId = caseId;
+        newWhisper.encryptedMessage = msgEnc;
+        newWhisper.encryptedFileHash = hashEnc;
+        newWhisper.encryptedSubmitter = submitterEnc;
+        newWhisper.priority = priorityEnc;
+        newWhisper.status = status;
+        newWhisper.isUrgent = isUrgent;
+        newWhisper.timestamp = block.timestamp;
+        newWhisper.senderHash = keccak256(abi.encodePacked(msg.sender));
+        
+        for (uint i = 0; i < attachments.length; i++) {
+            newWhisper.attachments.push(attachments[i]);
+        }
+
+        // Add to platform-wide list for global feed
+        allWhispers.push(newWhisper);
 
         // Update Stats
         if (address(stats) != address(0)) {
@@ -88,10 +104,18 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
         }
 
         Whisper storage w = caseWhispers[caseId][whisperIndex];
-        FHE.allowThis(w.encryptedMessage);
-        w.encryptedMessage = FHE.makePubliclyDecryptable(w.encryptedMessage);
+        
+        // Create new publicly decryptable handle
+        euint256 revealed = FHE.makePubliclyDecryptable(w.encryptedMessage);
+        
+        // Store new handle back in storage
+        w.encryptedMessage = revealed;
 
-        emit WhisperRevealRequested(caseId, whisperIndex, FHE.toBytes32(w.encryptedMessage));
+        // Grant permissions on the NEW handle
+        FHE.allowThis(revealed);
+        FHE.allow(revealed, msg.sender);
+
+        emit WhisperRevealRequested(caseId, whisperIndex, FHE.toBytes32(revealed));
     }
 
     /**
@@ -108,13 +132,33 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
         }
 
         Whisper storage w = caseWhispers[caseId][whisperIndex];
-        FHE.allowThis(w.encryptedSubmitter);
-        w.encryptedSubmitter = FHE.makePubliclyDecryptable(w.encryptedSubmitter);
+        
+        // Create new publicly decryptable handle
+        eaddress revealed = FHE.makePubliclyDecryptable(w.encryptedSubmitter);
+        
+        // Store new handle back in storage
+        w.encryptedSubmitter = revealed;
 
-        emit SubmitterRevealRequested(caseId, whisperIndex, FHE.toBytes32(w.encryptedSubmitter));
+        // Grant permissions on the NEW handle
+        FHE.allowThis(revealed);
+        FHE.allow(revealed, msg.sender);
+
+        emit SubmitterRevealRequested(caseId, whisperIndex, FHE.toBytes32(revealed));
     }
 
     function getWhisperCount(uint256 caseId) external view override returns (uint256) {
         return caseWhispers[caseId].length;
+    }
+
+    function getWhisper(uint256 caseId, uint256 whisperIndex) external view override returns (Whisper memory) {
+        return caseWhispers[caseId][whisperIndex];
+    }
+
+    function getAllWhispersCount() external view override returns (uint256) {
+        return allWhispers.length;
+    }
+
+    function getGlobalWhisper(uint256 index) external view override returns (Whisper memory) {
+        return allWhispers[index];
     }
 }

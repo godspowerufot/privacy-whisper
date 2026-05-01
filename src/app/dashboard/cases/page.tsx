@@ -3,17 +3,19 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
+import { ethers } from "ethers";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableColumn } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { MOCK_CASES, CaseRecord } from "@/lib/mock-cases";
+import { CaseRecord } from "@/lib/mock-cases";
 import { ADDRESSES } from "@/constants/contracts";
 import { useWhisperCaseManager } from "@/hooks/useContracts";
-import { useFhevm } from "@/providers/useFhevmContext";
+import { useFhe } from "@/providers/FhevmProvider";
 import { useFhevmEncrypt } from "@/hooks/useFhevmEncrypt";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "react-toastify";
 import {
   Search, Plus, Filter, X, Folder, Lock,
@@ -25,9 +27,23 @@ interface NewCaseForm {
   title: string;          // → title (plain, public)
   description: string;    // → description (plain, public)
   journalistName: string; // → encryptedName via FHE (private)
+  whisperBrief: string;
+  status: string;
+  priority: string;
+  tags: string;           // comma separated
+  prizePool: string;      // ETH amount
 }
 
-const BLANK: NewCaseForm = { title: "", description: "", journalistName: "" };
+const BLANK: NewCaseForm = {
+  title: "",
+  description: "",
+  journalistName: "",
+  whisperBrief: "",
+  status: "open",
+  priority: "Medium",
+  tags: "",
+  prizePool: "0"
+};
 
 type TxStep = "idle" | "encrypting" | "confirming" | "mining" | "done" | "error";
 
@@ -41,7 +57,8 @@ function NewCaseModal({
   onCreated: (caseId: string) => void;
 }) {
   const { encrypt256, isEncrypting: fheEncrypting } = useFhevmEncrypt();
-  const { isReady: fheReady } = useFhevm();
+  const instance = useFhe();
+  const fheReady = !!instance;
   const [form, setForm] = useState<NewCaseForm>(BLANK);
   const [step, setStep] = useState<TxStep>("idle");
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -87,25 +104,25 @@ function NewCaseModal({
     console.log("[CasesPage] caseManager:", !!caseManager, "fheReady:", fheReady, "address:", !!address);
 
     if (!caseManager || !fheReady || !address) {
-        console.error("[CasesPage] Early return because requirements not met!", { caseManager: !!caseManager, fhe: fheReady, address: !!address });
-        toast.error("Initialization incomplete. Please check your wallet and ensure FHE is loaded.");
-        return;
+      console.error("[CasesPage] Early return because requirements not met!", { caseManager: !!caseManager, fhe: fheReady, address: !!address });
+      toast.error("Initialization incomplete. Please check your wallet and ensure FHE is loaded.");
+      return;
     }
-    
+
     setErrMsg(null);
+    setStep("encrypting");
 
     try {
       /* Step 1 — encrypt journalist name */
-      setStep("encrypting");
       toast.info("🔒 Encrypting name…", { toastId: "fhe", autoClose: false });
 
       console.log("[CasesPage] Form Data:", {
-          title: form.title,
-          description: form.description,
-          journalistName: form.journalistName
+        title: form.title,
+        description: form.description,
+        journalistName: form.journalistName
       });
       console.log("[CasesPage] Converting plaintext name to BigInt...");
-      
+
       const nameBytes = new TextEncoder().encode(form.journalistName.trim());
       const padded = new Uint8Array(32);
       padded.set(nameBytes.slice(0, 32));
@@ -119,7 +136,7 @@ function NewCaseModal({
 
       console.log("[CasesPage] Calling encrypt256...");
       const encryptedInput = await encrypt256(nameBigInt, ADDRESSES.WhisperCaseManager);
-      
+
       if (!encryptedInput) {
         throw new Error("Encryption failed - no result returned.");
       }
@@ -138,11 +155,19 @@ function NewCaseModal({
       toast.info("📝 Confirm in wallet…", { toastId: "wallet", autoClose: false });
 
       console.log("[CasesPage] Prompting wallet via caseManager.createCase...");
+      const tagsArray = form.tags.split(",").map(t => t.trim()).filter(t => t.length > 0);
+      const prizePoolWei = ethers.parseEther(form.prizePool || "0");
+
       const tx = await caseManager.createCase(
         form.title.trim(),
         form.description.trim(),
+        form.whisperBrief.trim(),
+        form.status.trim(),
+        form.priority.trim(),
+        tagsArray,
         encryptedInput.handles[0],  // externalEuint256 (bytes32)
         encryptedInput.inputProof,  // bytes
+        { value: prizePoolWei }
       );
       console.log("[CasesPage] Transaction successfully sent! tx:", tx);
 
@@ -211,12 +236,12 @@ function NewCaseModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      className="fixed inset-0 z-50 w-screen flex items-center justify-center px-4"
       style={{ backdropFilter: "blur(6px)", background: "rgba(0,0,0,0.82)" }}
       role="dialog" aria-modal="true"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div className="relative w-full max-w-md bg-card border border-border shadow-[0_24px_64px_rgba(0,0,0,0.85)]">
+      <div className="relative  mt-40 w-full max-w-lg bg-card border border-border shadow-[0_24px_64px_rgba(0,0,0,0.85)]">
         <span className="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-primary" />
         <span className="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-primary" />
 
@@ -321,6 +346,74 @@ function NewCaseModal({
               🔒 Encrypted client-side with Zama FHE before the transaction. Never stored in plaintext.
             </p>
           </div>
+
+          {/* whisperBrief */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-text-secondary text-[10px] font-bold uppercase tracking-widest">
+              Whisper Brief <span className="text-error">*</span>
+            </label>
+            <input
+              id="case-brief"
+              value={form.whisperBrief}
+              onChange={(e) => set("whisperBrief", e.target.value)}
+              placeholder="What exactly do you need from sources?"
+              className="w-full h-11 bg-surface border border-border text-white text-sm px-4 focus:outline-none focus:border-primary transition-all"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* status */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-text-secondary text-[10px] font-bold uppercase tracking-widest">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => set("status", e.target.value)}
+                className="w-full h-11 bg-surface border border-border text-white text-sm px-4 focus:outline-none focus:border-primary transition-all appearance-none"
+              >
+                <option value="open">Open</option>
+                <option value="urgent">Urgent</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+
+            {/* priority */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-text-secondary text-[10px] font-bold uppercase tracking-widest">Priority</label>
+              <select
+                value={form.priority}
+                onChange={(e) => set("priority", e.target.value)}
+                className="w-full h-11 bg-surface border border-border text-white text-sm px-4 focus:outline-none focus:border-primary transition-all appearance-none"
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </select>
+            </div>
+          </div>
+
+          {/* tags */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-text-secondary text-[10px] font-bold uppercase tracking-widest">Tags (comma separated)</label>
+            <input
+              value={form.tags}
+              onChange={(e) => set("tags", e.target.value)}
+              placeholder="e.g. corruption, police, fraud"
+              className="w-full h-11 bg-surface border border-border text-white text-sm px-4 focus:outline-none focus:border-primary transition-all"
+            />
+          </div>
+
+          {/* prizePool */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-text-secondary text-[10px] font-bold uppercase tracking-widest">Prize Pool (Sepolia ETH)</label>
+            <input
+              type="number"
+              step="0.001"
+              value={form.prizePool}
+              onChange={(e) => set("prizePool", e.target.value)}
+              placeholder="0.01"
+              className="w-full h-11 bg-surface border border-border text-white text-sm px-4 focus:outline-none focus:border-primary transition-all"
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -363,7 +456,7 @@ const columns: TableColumn<CaseRecord>[] = [
         {row.isAnonymous ? (
           <><Shield size={10} className="text-primary" /><span className="text-primary text-[10px] uppercase font-bold tracking-tight">Hidden</span></>
         ) : (
-          <span className="text-white text-xs">{row.reporterName}</span>
+          <span className="text-white text-xs">{row.reporterName ? row.reporterName.slice(0, 10) : "Unknown"}</span>
         )}
       </div>
     ),
@@ -381,11 +474,14 @@ const columns: TableColumn<CaseRecord>[] = [
   { key: "whispers", label: "Whispers", sortable: true },
   {
     key: "prizePool", label: "Prize Pool", sortable: true,
-    render: (row) => (
-      <span className="flex items-center gap-1.5 text-success font-bold text-xs">
-        <Gift size={11} />${row.prizePool.toLocaleString()}
-      </span>
-    ),
+    render: (row) => {
+      const isEth = typeof row.prizePool === 'number' && row.prizePool < 100; // rough heuristic to distinguish mock USD from ETH
+      return (
+        <span className="flex items-center gap-1.5 text-success font-bold text-xs">
+          <Gift size={11} />{row.prizePool} {isEth ? "ETH" : "USD"}
+        </span>
+      );
+    },
   },
   { key: "created", label: "Created", sortable: true },
 ];
@@ -393,14 +489,68 @@ const columns: TableColumn<CaseRecord>[] = [
 /* ─── Page ───────────────────────────────────────────── */
 export default function CasesPage() {
   const router = useRouter();
-  const [cases, setCases] = useState<CaseRecord[]>(MOCK_CASES);
+  const [cases, setCases] = useState<CaseRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState("created");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [newOpen, setNewOpen] = useState(false);
+  const { role } = useAuth();
+  const caseManager = useWhisperCaseManager();
 
   // FHE is initialised by FhevmProvider at app boot — just consume it here.
-  const { isReady: fheReady } = useFhevm();
+  const instance = useFhe();
+  const fheReady = !!instance;
+
+  const fetchCases = useCallback(async () => {
+    if (!caseManager) return;
+
+    try {
+      setIsLoading(true);
+      console.log("[CasesPage] Fetching all cases by ID...");
+      const nextIdBig = await caseManager.nextCaseId();
+      const nextId = Number(nextIdBig);
+      
+      const casePromises = [];
+      for (let i = 1; i < nextId; i++) {
+        casePromises.push(caseManager.getCase(i).then((c: any) => ({ caseId: i, caseData: c })).catch(() => null));
+      }
+      
+      const results = await Promise.all(casePromises);
+      
+      const chainCases: CaseRecord[] = results
+        .filter(res => res !== null && res.caseData.caseId.toString() !== "0")
+        .map((res: any) => {
+          const { caseId, caseData: c } = res;
+          return {
+            id: `C-${caseId.toString()}`,
+            title: c.title,
+            status: c.status as any,
+            priority: c.priority as any,
+            whispers: Number(c.whisperCount),
+            created: new Date(Number(c.createdAt) * 1000).toISOString().slice(0, 10),
+            tags: [...c.tags],
+            background: c.description,
+            whisperBrief: c.whisperBrief,
+            prizePool: parseFloat(ethers.formatEther(c.prizePool)),
+            reporterName: c.journalist,
+            isAnonymous: c.journalist === "0x0000000000000000000000000000000000000000",
+          };
+        });
+
+      setCases(chainCases.reverse()); // Show newest first
+    } catch (err) {
+      console.error("[CasesPage] Error fetching events:", err);
+      setCases([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [caseManager]);
+
+  useEffect(() => {
+    fetchCases();
+  }, [fetchCases]);
+
 
   const filtered = cases
     .filter((c) =>
@@ -414,20 +564,7 @@ export default function CasesPage() {
     });
 
   const handleCreated = (caseId: string) => {
-    setCases((prev) => [{
-      id: caseId,
-      title: "New on-chain case",
-      status: "open",
-      priority: "Medium",
-      whispers: 0,
-      created: new Date().toISOString().slice(0, 10),
-      tags: [],
-      background: "",
-      whisperBrief: "",
-      prizePool: 0,
-      reporterName: "Anonymous",
-      isAnonymous: true,
-    }, ...prev]);
+    fetchCases(); // Refresh list from chain
   };
 
   return (
@@ -452,7 +589,10 @@ export default function CasesPage() {
           <div className="flex-1">
             <Input placeholder="Search cases…" value={query} onChange={(e) => setQuery(e.target.value)} leftIcon={<Search size={14} />} />
           </div>
-          <Button variant="ghost" size="sm"><Filter size={12} /> Filter</Button>
+          <Button variant="ghost" size="sm" onClick={fetchCases} disabled={isLoading}>
+            {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Filter size={12} />}
+            {isLoading ? "Loading..." : "Refresh"}
+          </Button>
 
           {/* Disabled + spinner until FHE SDK is ready */}
           <Button
@@ -476,16 +616,18 @@ export default function CasesPage() {
           sortDir={sortDir}
           onSort={(k) => { setSortKey(k); setSortDir((d) => (sortKey === k && d === "asc" ? "desc" : "asc")); }}
           onRowClick={(row) => router.push(`/dashboard/cases/${row.id}`)}
-          emptyText="No cases match your search."
+          emptyText={isLoading ? "Loading cases from blockchain..." : "No cases created."}
         />
-        <p className="text-text-secondary text-[10px] mt-3">↗ Click any row to view the case and submit a whisper</p>
+        {role !== "journalist" && (
+          <p className="text-text-secondary text-[10px] mt-3">↗ Click any row to view the case and submit a whisper</p>
+        )}
       </Card>
 
-        <NewCaseModal
-          open={newOpen}
-          onClose={() => setNewOpen(false)}
-          onCreated={handleCreated}
-        />
+      <NewCaseModal
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        onCreated={handleCreated}
+      />
     </DashboardLayout>
   );
 }

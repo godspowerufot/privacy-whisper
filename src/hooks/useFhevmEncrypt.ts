@@ -1,12 +1,13 @@
 /**
  * FHEVM Encryption Hook
  * Provides functions to encrypt values for confidential transactions
+ * Updated to use the new useFhe pattern
  */
 
 import { useCallback, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { toHex } from 'viem';
-import { useFhevm } from '../providers/useFhevmContext';
+import { useFhe } from '@/providers/FhevmProvider';
 
 export interface EncryptedResult {
   handles: `0x${string}`[];
@@ -18,12 +19,12 @@ export interface EncryptedResult {
  */
 function uint8ArrayToHex(arr: Uint8Array): `0x${string}` {
   return typeof arr === 'string' && (arr as string).startsWith('0x') 
-    ? arr as `0x${string}` 
+    ? (arr as string) as `0x${string}` 
     : toHex(arr);
 }
 
 export function useFhevmEncrypt() {
-  const { instance, isReady, error } = useFhevm();
+  const instance = useFhe();
   const { address, isConnected } = useAccount();
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [encryptError, setEncryptError] = useState<Error | null>(null);
@@ -36,7 +37,7 @@ export function useFhevmEncrypt() {
       value: bigint,
       contractAddress: string
     ): Promise<EncryptedResult | null> => {
-      if (!instance || !address || !isReady || !isConnected) {
+      if (!instance || !address || !isConnected) {
         setEncryptError(new Error('FHEVM not ready or wallet not connected'));
         return null;
       }
@@ -45,31 +46,13 @@ export function useFhevmEncrypt() {
       setEncryptError(null);
 
       try {
-        console.log('[FHEVM] Encrypting 256 value...');
-        
-        const encryptedInput = instance.createEncryptedInput(
-          contractAddress,
-          address
-        );
-        
+        const encryptedInput = await instance.createEncryptedInput(contractAddress, address);
         const result = await encryptedInput.add256(value).encrypt();
         
-        const { handles, inputProof } = result;
-        
-        // Convert handles array to hex strings
-        const hexHandles = handles.map((h: unknown) => {
-          if (typeof h === 'string' && h.startsWith('0x')) {
-            return h as `0x${string}`;
-          }
-          return uint8ArrayToHex(h as Uint8Array);
-        });
-        
-        // Convert inputProof to hex string
-        const hexProof = typeof inputProof === 'string' && inputProof.startsWith('0x')
-          ? inputProof as `0x${string}`
-          : uint8ArrayToHex(inputProof as unknown as Uint8Array);
-        
-        return { handles: hexHandles, inputProof: hexProof };
+        return { 
+          handles: result.handles.map(h => uint8ArrayToHex(h as Uint8Array)), 
+          inputProof: uint8ArrayToHex(result.inputProof as unknown as Uint8Array) 
+        };
       } catch (err) {
         console.error('[FHEVM] Encryption failed:', err);
         setEncryptError(err instanceof Error ? err : new Error('Encryption failed'));
@@ -78,14 +61,52 @@ export function useFhevmEncrypt() {
         setIsEncrypting(false);
       }
     },
-    [instance, address, isReady, isConnected]
+    [instance, address, isConnected]
+  );
+
+  /**
+   * Specialized encryption for Whisper submission
+   */
+  const encryptWhisper = useCallback(
+    async (
+      message: bigint,
+      fileHash: bigint,
+      submitter: `0x${string}`,
+      priority: number,
+      vaultAddress: string
+    ): Promise<EncryptedResult | null> => {
+      if (!instance || !address || !isConnected) return null;
+      setIsEncrypting(true);
+
+      try {
+        const input = await instance.createEncryptedInput(vaultAddress, address);
+        const result = await input
+          .add256(message)
+          .add256(fileHash)
+          .addAddress(submitter)
+          .add8(priority)
+          .encrypt();
+
+        return { 
+          handles: result.handles.map(h => uint8ArrayToHex(h as Uint8Array)), 
+          inputProof: uint8ArrayToHex(result.inputProof as unknown as Uint8Array) 
+        };
+      } catch (err) {
+        console.error('[FHEVM] Whisper encryption failed:', err);
+        return null;
+      } finally {
+        setIsEncrypting(false);
+      }
+    },
+    [instance, address, isConnected]
   );
 
   return {
     encrypt256,
+    encryptWhisper,
     isEncrypting,
-    error: error || encryptError,
-    isReady,
+    error: encryptError,
+    isReady: !!instance,
   };
 }
 

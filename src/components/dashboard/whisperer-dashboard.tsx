@@ -12,15 +12,110 @@ import {
   Lock, 
   Eye,
   TrendingUp,
-  Clock
+  Clock,
+  Loader2
 } from "lucide-react";
-
-const myWhispers = [
-  { id: "W-882", case: "Police Misconduct #88B", date: "2d ago", status: "reviewed" as const, reward: "$500" },
-  { id: "W-901", case: "Municipal Contract Fraud", date: "4h ago", status: "pending" as const, reward: "Pending" },
-];
+import { useAccount } from "wagmi";
+import { useWhisperStats, useWhisperCaseManager, useWhisperVault } from "@/hooks/useContracts";
+import { ethers } from "ethers";
+import { useRouter } from "next/navigation";
 
 export function WhispererDashboard() {
+  const { address } = useAccount();
+  const statsContract = useWhisperStats();
+  const caseManager = useWhisperCaseManager();
+  const vault = useWhisperVault();
+  const router = useRouter();
+  
+  const [stats, setStats] = React.useState({
+    totalWhispers: 0,
+    trustLevel: "BETA",
+    impactScore: 0,
+    totalEarned: 0
+  });
+  const [openCases, setOpenCases] = React.useState<any[]>([]);
+  const [myWhispers, setMyWhispers] = React.useState<any[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isGuidelinesOpen, setIsGuidelinesOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    async function fetchStats() {
+      if (!statsContract || !address) return;
+      
+      try {
+        setIsLoading(true);
+        const userStats = await statsContract.userStats(address);
+        
+        let trustLevel = "BETA";
+        const impactScore = Number(userStats.impactScore);
+        if (impactScore > 100) trustLevel = "GAMMA";
+        if (impactScore > 500) trustLevel = "OMEGA";
+
+        setStats({
+          totalWhispers: Number(userStats.totalWhispers),
+          trustLevel: trustLevel,
+          impactScore: impactScore,
+          totalEarned: Number(userStats.totalEarned)
+        });
+      } catch (err) {
+        console.error("[WhispererDashboard] Error fetching stats:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    fetchStats();
+  }, [statsContract, address]);
+
+  React.useEffect(() => {
+    async function fetchData() {
+      if (!caseManager || !vault || !address) return;
+      try {
+        // Fetch Open Cases
+        const nextIdBig = await caseManager.nextCaseId();
+        const nextId = Number(nextIdBig);
+        const casePromises = [];
+        for (let i = 1; i < nextId; i++) {
+          casePromises.push(caseManager.getCase(i).catch(() => null));
+        }
+        const caseResults = await Promise.all(casePromises);
+        const activeBounties = caseResults
+          .filter(c => c !== null && c.caseId.toString() !== "0" && c.isOpen)
+          .map(c => ({
+            id: `C-${c.caseId.toString()}`,
+            caseId: c.caseId.toString(),
+            title: c.title,
+            urgency: c.priority,
+            pool: ethers.formatEther(c.prizePool) + " ETH"
+          }));
+        setOpenCases(activeBounties.reverse());
+
+        // Fetch My Whispers
+        const senderHash = ethers.solidityPackedKeccak256(["address"], [address]);
+        const whisperCountBig = await vault.getAllWhispersCount();
+        const whisperCount = Number(whisperCountBig);
+        const whisperPromises = [];
+        for (let i = 0; i < whisperCount; i++) {
+          whisperPromises.push(vault.getGlobalWhisper(i).then((w: any) => ({ index: i, whisper: w })).catch(() => null));
+        }
+        const whisperResults = await Promise.all(whisperPromises);
+        const userWhispers = whisperResults
+          .filter(res => res !== null && res.whisper.senderHash === senderHash)
+          .map(res => ({
+            id: `W-${res.index}`,
+            case: `Case C-${res.whisper.caseId.toString()}`,
+            date: new Date(Number(res.whisper.timestamp) * 1000).toISOString().slice(0, 10),
+            status: res.whisper.status,
+            reward: "Pending"
+          }));
+        setMyWhispers(userWhispers.reverse());
+      } catch (err) {
+        console.error("Error fetching whisperer data:", err);
+      }
+    }
+    fetchData();
+  }, [caseManager, vault, address]);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Metrics */}
@@ -28,25 +123,25 @@ export function WhispererDashboard() {
         <Card
           variant="metric"
           metricLabel="Total Whispers"
-          metricValue="14"
+          metricValue={isLoading ? "..." : stats.totalWhispers.toString()}
           metricDelta={{ value: "2 pending", positive: true }}
         />
         <Card
           variant="metric"
           metricLabel="Trust Level"
-          metricValue="BETA"
+          metricValue={isLoading ? "..." : stats.trustLevel}
           metricDelta={{ value: "+150 XP", positive: true }}
         />
         <Card
           variant="metric"
           metricLabel="Impact Score"
-          metricValue="720"
+          metricValue={isLoading ? "..." : stats.impactScore.toString()}
           metricDelta={{ value: "Top 15%", positive: true }}
         />
         <Card
           variant="metric"
           metricLabel="Total Earned"
-          metricValue="$4.2K"
+          metricValue={isLoading ? "..." : `$${stats.totalEarned}`}
           metricDelta={{ value: "+$500 week", positive: true }}
         />
       </div>
@@ -80,18 +175,15 @@ export function WhispererDashboard() {
             {myWhispers.length === 0 && (
               <div className="py-12 text-center">
                 <p className="text-[#555] text-xs font-bold uppercase tracking-widest mb-4">No active whispers</p>
-                <Button variant="primary" size="sm">Submit First Tip</Button>
+                <Button variant="primary" size="sm" onClick={() => router.push('/dashboard/whispers/submit')}>Submit First Tip</Button>
               </div>
             )}
           </Card>
 
           <Card title="Open Bounties" subtitle="Browse cases requiring evidence">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                { title: "Pharmaceutical Pricing", pool: "$10,000", urgency: "Medium" },
-                { title: "Environmental Dumping", pool: "$3,000", urgency: "High" }
-              ].map(b => (
-                <div key={b.title} className="p-4 bg-white/2 border border-white/5 hover:border-[#00D1B2]/30 transition-all cursor-pointer">
+              {openCases.map((b: any) => (
+                <div key={b.id} onClick={() => router.push(`/dashboard/whispers/submit`)} className="p-4 bg-white/2 border border-white/5 hover:border-[#00D1B2]/30 transition-all cursor-pointer">
                   <div className="flex justify-between mb-3">
                      <span className="text-[#00D1B2] text-[9px] font-black uppercase tracking-widest">Active Bounty</span>
                      <span className="text-white font-mono text-xs">{b.pool}</span>
@@ -104,6 +196,12 @@ export function WhispererDashboard() {
                 </div>
               ))}
             </div>
+            {openCases.length === 0 && (
+              <div className="py-12 text-center bg-white/2 border border-dashed border-white/10">
+                <p className="text-[#555] text-[10px] font-bold uppercase tracking-widest mb-4">No open investigations</p>
+                <Button variant="primary" size="xs" onClick={() => router.push('/dashboard/cases')}>Browse Cases</Button>
+              </div>
+            )}
           </Card>
         </div>
 
@@ -132,14 +230,11 @@ export function WhispererDashboard() {
 
           <Card title="Whisperer Essentials">
             <div className="flex flex-col gap-1">
-              <Button variant="primary" size="sm" className="w-full justify-start gap-3">
-                <MessageSquare size={14} /> Global Case Search
-              </Button>
-              <Button variant="secondary" size="sm" className="w-full justify-start gap-3">
+              <Button variant="secondary" size="sm" className="w-full justify-start gap-3" onClick={() => setIsGuidelinesOpen(true)}>
                 <Zap size={14} /> Submission Guidelines
               </Button>
-              <Button variant="ghost" size="sm" className="w-full justify-start gap-3">
-                <Gift size={14} /> Claim Rewards
+              <Button variant="ghost" size="sm" className="w-full justify-start gap-3" onClick={() => router.push('/dashboard/rewards')}>
+                <Gift size={14} /> Rewards
               </Button>
             </div>
           </Card>
@@ -155,6 +250,23 @@ export function WhispererDashboard() {
           </div>
         </div>
       </div>
+
+      {isGuidelinesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4" onClick={() => setIsGuidelinesOpen(false)}>
+          <div className="bg-[#121212] border border-[#2A2A2A] max-w-lg w-full p-6 relative" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-white text-lg font-black uppercase tracking-widest mb-4">Submission Guidelines</h3>
+            <div className="text-[#A1A1AA] text-xs leading-relaxed flex flex-col gap-4">
+              <p><strong>1. Privacy First:</strong> Your identity is protected using Zama's Fully Homomorphic Encryption. The platform cannot decrypt your identity without a cryptographic reveal request approved by the journalist.</p>
+              <p><strong>2. Provide Evidence:</strong> Unsubstantiated claims will likely be ignored. Always try to provide documents, photos, or data to back up your tip.</p>
+              <p><strong>3. Monitor the Status:</strong> Check the status of your whispers regularly. If a journalist reviews and approves your evidence, you may be eligible for a reward.</p>
+              <p><strong>4. Claiming Rewards:</strong> When a reward is approved, the payout is processed confidentially through our smart contracts. Your Ethereum address will be revealed at the payout step to receive funds.</p>
+            </div>
+            <div className="mt-8 flex justify-end">
+              <Button variant="primary" size="sm" onClick={() => setIsGuidelinesOpen(false)}>Understood</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

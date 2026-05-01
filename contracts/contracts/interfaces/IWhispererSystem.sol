@@ -16,7 +16,12 @@ interface IWhisperCaseManager {
         address journalist;
         euint256 encryptedJournalistName;
         string title;
-        string description;
+        string description; // background
+        string whisperBrief;
+        string status;      // e.g. "urgent", "open", "reviewed"
+        string priority;    // e.g. "High", "Medium", "Low"
+        string[] tags;
+        uint256 prizePool;  // in Wei
         bool isOpen;
         uint256 createdAt;
         uint256 whisperCount;
@@ -25,9 +30,13 @@ interface IWhisperCaseManager {
     function createCase(
         string calldata title, 
         string calldata description, 
+        string calldata whisperBrief,
+        string calldata status,
+        string calldata priority,
+        string[] calldata tags,
         externalEuint256 encryptedName,
         bytes calldata inputProof
-    ) external returns (uint256);
+    ) external payable returns (uint256);
     
     function closeCase(uint256 caseId) external;
     function incrementWhisperCount(uint256 caseId) external;
@@ -35,17 +44,30 @@ interface IWhisperCaseManager {
 }
 
 interface IWhisperVault {
+    struct Attachment {
+        string name;
+        string fileType;
+        string size;
+    }
+
     struct Whisper {
         uint256 caseId;
         euint256 encryptedMessage;
         euint256 encryptedFileHash;
         eaddress encryptedSubmitter;
         euint8 priority;
+        string status;      // e.g. "unread", "reviewed"
+        bool isUrgent;
+        Attachment[] attachments;
         uint256 timestamp;
+        bytes32 senderHash;
     }
 
     function submitWhisper(
         uint256 caseId,
+        string calldata status,
+        bool isUrgent,
+        Attachment[] calldata attachments,
         externalEuint256 encryptedMessage,
         externalEuint256 encryptedFileHash,
         externalEaddress encryptedSubmitter,
@@ -54,6 +76,9 @@ interface IWhisperVault {
     ) external;
 
     function getWhisperCount(uint256 caseId) external view returns (uint256);
+    function getWhisper(uint256 caseId, uint256 whisperIndex) external view returns (Whisper memory);
+    function getAllWhispersCount() external view returns (uint256);
+    function getGlobalWhisper(uint256 index) external view returns (Whisper memory);
 }
 
 interface IRewardManager {
@@ -62,6 +87,7 @@ interface IRewardManager {
         euint256 encryptedAmount;
         bool approved;
         bool paid;
+        address recipient;
     }
 
     function approveReward(

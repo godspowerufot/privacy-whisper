@@ -15,6 +15,27 @@ export interface WhisperRecord {
 }
 
 export const MOCK_WHISPERS: WhisperRecord[] = [
+  // Whispers for C-015 (Crypto Exchange Insolvency - Owner: Alex Thorne)
+  {
+    id: "W-1501",
+    caseId: "C-015",
+    content: "I am a senior developer at the exchange. Here is a snapshot of the internal database showing that 30,000 ETH of user deposits were swept into an unaudited yield aggregator called 'YieldMax' on April 15th. This has a $45M deficit.",
+    timestamp: "2026-04-29 18:22",
+    attachments: [
+      { name: "database_snapshot.png", type: "image/png", size: "1.2 MB" }
+    ],
+    status: "unread",
+    isUrgent: true
+  },
+  {
+    id: "W-1502",
+    caseId: "C-015",
+    content: "The CEO and CFO are currently in Dubai and have been moving company funds into personal wallets. Look at transaction hash 0x773f... on Etherscan.",
+    timestamp: "2026-04-29 20:05",
+    attachments: [],
+    status: "unread",
+    isUrgent: false
+  },
   // Whispers for C-014 (Municipal Contract Fraud - Owner: Elena Fischer)
   {
     id: "W-8821",

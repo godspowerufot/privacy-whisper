@@ -6,12 +6,12 @@ import '@rainbow-me/rainbowkit/styles.css';
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { FhevmProvider } from '@/providers/FhevmProvider';
 import { wagmiConfig } from '@/config/wagmi';
 import { ToastContainer } from 'react-toastify';
 import { queryClient } from '@/lib/react-query';
 import { AuthProvider } from '@/lib/auth-context';
-
+import { FheProvider } from '@/providers/FhevmProvider';
+import Script from 'next/script';
 
 const PT_Mono_ = PT_Mono({
     subsets: ['latin'],
@@ -24,18 +24,24 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en">
+        <html lang="en" suppressHydrationWarning>
+            <head>
+                <Script
+                    src="https://cdn.zama.org/relayer-sdk-js/0.4.2/relayer-sdk-js.umd.cjs"
+                    type="text/javascript" strategy='beforeInteractive' />
+            </head>
             <body
                 className={`${PT_Mono_.className} antialiased overflow-x-hidden text-sm`}
+                suppressHydrationWarning
             >
 
                 <div className="bg-black">
                     <WagmiProvider config={wagmiConfig}>
                         <QueryClientProvider client={queryClient}>
                             <RainbowKitProvider>
-                                <FhevmProvider>
+                                <FheProvider >
                                     <AuthProvider>
-                                        <div className="min-h-screen max-w-7xl mx-auto space-y-8 px-5 py-14 lg:px-10">
+                                        <div className="min-h-screen max-w-8xl  mx-auto space-y-8 px-0 py-14 ">
                                             {children}
                                         </div>
                                         <ToastContainer
@@ -50,7 +56,7 @@ export default function RootLayout({
                                             theme="colored"
                                         />
                                     </AuthProvider>
-                                </FhevmProvider>
+                                </FheProvider>
                             </RainbowKitProvider>
                         </QueryClientProvider>
                     </WagmiProvider>

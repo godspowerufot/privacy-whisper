@@ -36,14 +36,21 @@ export function useContractInstance(name: ContractName) {
     return useMemo(() => {
         if (!address || !abi) return null;
 
-        // --- WRITE path: use window.ethereum directly ---
-        // Wagmi's viem transport wraps the provider but can drop calldata when bridged
-        // to Ethers BrowserProvider. window.ethereum is the raw EIP-1193 provider and
-        // is always reliable for MetaMask / injected wallets.
-        if (walletClient && typeof window !== 'undefined' && (window as any).ethereum) {
-            const provider = new BrowserProvider((window as any).ethereum);
-            const signer = new JsonRpcSigner(provider, walletClient.account.address);
-            return new Contract(address, abi, signer);
+        // --- WRITE path: use walletClient if available ---
+        if (walletClient) {
+            const { chain, transport } = walletClient;
+            const network = {
+                chainId: chain?.id || 1,
+                name: chain?.name || 'mainnet',
+            };
+            try {
+                // We use the transport from wagmi directly
+                const provider = new BrowserProvider(transport, network);
+                const signer = new JsonRpcSigner(provider, walletClient.account.address);
+                return new Contract(address, abi, signer);
+            } catch (err) {
+                console.error(`[useContractInstance] Error creating signer-backed contract for ${name}:`, err);
+            }
         }
 
         // --- READ path: use public client transport ---
@@ -57,7 +64,7 @@ export function useContractInstance(name: ContractName) {
         }
 
         return null;
-    }, [address, abi, walletClient, publicClient]);
+    }, [address, abi, walletClient, publicClient, name]);
 }
 
 /**

@@ -6,12 +6,12 @@ import WhisperVaultABI from '../../abi/WhisperVault.json';
 import RewardManagerABI from '../../abi/RewardManager.json';
 
 export const ADDRESSES = {
-    AccessControlManager: '0x1F51688649f01818Fc86f2B158084E6257618c37',
-    WhisperCaseManager:   '0x020aB90d68eA3a7FD6dC7E17d3ada66e76A6367c',
-    AuditTrail:           '0xa2712892B12197c5C05fD8b4a6a80713C6Ea1225',
-    WhisperStats:         '0x5530c0270a4404e6c964af718dd49e2F340eeDec',
-    WhisperVault:         '0xB3db74E12792A47085eFB01e737Edb96f0CdE8FF',
-    RewardManager:        '0x95f0aA956D6F0c27848fF82c8082ed7BcA373Fac',
+    AccessControlManager: '0x5fa76f93b7A869e065c842FffA7e1D48641b7721',
+    WhisperCaseManager:   '0xFc5161AF020e9BDbe43e63e2623daBB66DA3496E',
+    AuditTrail:           '0x175CB366fE729a1F24949B50477bca9aDBaF9c58',
+    WhisperStats:         '0x7ab37E894ef821544f2b339fc9eb6793d8170660',
+    WhisperVault:         '0x12d0CEEee07F6d6E1512e6B22d100EAC000Df58a',
+    RewardManager:        '0xB4C5d17A24Abaa3274CFA4AF1d55C84e260e2f39',
 } as const;
 
 export const ABIS = {

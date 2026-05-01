@@ -15,6 +15,22 @@ export interface CaseRecord {
 
 export const MOCK_CASES: CaseRecord[] = [
   {
+    id: "C-015",
+    title: "Crypto Exchange Insolvency",
+    status: "urgent",
+    priority: "High",
+    whispers: 4,
+    created: "2026-04-29",
+    tags: ["crypto", "exchange", "insolvency", "fraud"],
+    background:
+      "A prominent decentralized finance platform and exchange is suspected of commingling user funds with high-risk lending protocols. Internal chats suggest executive management is aware of a $45M deficit that could result in an imminent liquidity crunch and withdrawal freeze.",
+    whisperBrief:
+      "We are investigating potential insolvency and misuse of user deposits at the platform. If you have access to internal balance sheets, transaction logs, commingling evidence, or developer communications, please submit here securely.",
+    prizePool: 12000,
+    reporterName: "Alex Thorne",
+    isAnonymous: true,
+  },
+  {
     id: "C-014",
     title: "Municipal Contract Fraud",
     status: "urgent",

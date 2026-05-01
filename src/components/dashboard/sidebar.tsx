@@ -20,7 +20,7 @@ import { useAuth } from "@/lib/auth-context";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["journalist", "whisperer", null] },
-  { label: "Create Case", href: "/dashboard/cases/new", icon: Folder, roles: ["journalist"] },
+  { label: "Create Case", href: "/dashboard/cases", icon: Folder, roles: ["journalist"] },
   { label: "Cases", href: "/dashboard/cases", icon: Folder, roles: ["journalist", "whisperer", null] },
   { label: "Incoming Whispers", href: "/dashboard/whispers", icon: MessageSquare, roles: ["journalist"] },
   { label: "Submit Tip", href: "/dashboard/cases", icon: MessageSquare, roles: ["whisperer"] },
@@ -75,7 +75,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           {filteredItems.map(({ label, href, icon: Icon }) => {
             const isActive = pathname === href || pathname.startsWith(href + "/");
             return (
-              <li key={href}>
+              <li key={label}>
                 <Link
                   href={href}
                   className={[

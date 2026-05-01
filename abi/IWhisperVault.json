@@ -4,6 +4,200 @@
   "sourceName": "contracts/interfaces/IWhispererSystem.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "getAllWhispersCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "name": "getGlobalWhisper",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "caseId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "euint256",
+              "name": "encryptedMessage",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "euint256",
+              "name": "encryptedFileHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "eaddress",
+              "name": "encryptedSubmitter",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "euint8",
+              "name": "priority",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "string",
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "internalType": "bool",
+              "name": "isUrgent",
+              "type": "bool"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "string",
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "internalType": "string",
+                  "name": "fileType",
+                  "type": "string"
+                },
+                {
+                  "internalType": "string",
+                  "name": "size",
+                  "type": "string"
+                }
+              ],
+              "internalType": "struct IWhisperVault.Attachment[]",
+              "name": "attachments",
+              "type": "tuple[]"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "senderHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct IWhisperVault.Whisper",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "caseId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "whisperIndex",
+          "type": "uint256"
+        }
+      ],
+      "name": "getWhisper",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "caseId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "euint256",
+              "name": "encryptedMessage",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "euint256",
+              "name": "encryptedFileHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "eaddress",
+              "name": "encryptedSubmitter",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "euint8",
+              "name": "priority",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "string",
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "internalType": "bool",
+              "name": "isUrgent",
+              "type": "bool"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "string",
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "internalType": "string",
+                  "name": "fileType",
+                  "type": "string"
+                },
+                {
+                  "internalType": "string",
+                  "name": "size",
+                  "type": "string"
+                }
+              ],
+              "internalType": "struct IWhisperVault.Attachment[]",
+              "name": "attachments",
+              "type": "tuple[]"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "senderHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct IWhisperVault.Whisper",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -28,6 +222,38 @@
           "internalType": "uint256",
           "name": "caseId",
           "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "internalType": "bool",
+          "name": "isUrgent",
+          "type": "bool"
+        },
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "fileType",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "size",
+              "type": "string"
+            }
+          ],
+          "internalType": "struct IWhisperVault.Attachment[]",
+          "name": "attachments",
+          "type": "tuple[]"
         },
         {
           "internalType": "externalEuint256",

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useAccount } from "wagmi";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +14,18 @@ import { MOCK_WHISPERS } from "@/lib/mock-whispers";
 import {
   ArrowLeft, Shield, Clock, Tag, MessageSquare,
   CheckCircle2, Loader2, AlertTriangle, Gift, User,
-  FileText, ExternalLink, ChevronDown, ChevronUp
+  FileText, ExternalLink, ChevronDown, ChevronUp, Eye
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useWhisperCaseManager, useWhisperVault, useRewardManager } from "@/hooks/useContracts";
+import { useFhevmEncrypt } from "@/hooks/useFhevmEncrypt";
+import { useFhevmDecrypt } from "@/hooks/useFhevmDecrypt"
+import { ADDRESSES } from "@/constants/contracts";
+import { toast } from "react-toastify";
+import { ethers } from "ethers";
+import { CaseRecord } from "@/lib/mock-cases";
+import { WhisperRecord } from "@/lib/mock-whispers";
+import { convertFileToBase64, uploadBase64Image } from "@/lib/utils";
 
 const SIMULATED_JOURNALIST = "Elena Fischer";
 
@@ -24,16 +34,231 @@ type SubmitState = "idle" | "submitting" | "waiting";
 
 export default function CaseDetailPage() {
   const { role } = useAuth();
+  const { address } = useAccount();
   const { id } = useParams<{ id: string }>();
-  const caseData = MOCK_CASES.find((c) => c.id === id);
+  const [caseData, setCaseData] = useState<CaseRecord | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const caseManager = useWhisperCaseManager();
+  const vault = useWhisperVault();
+  const rewardManager = useRewardManager();
+  const { encryptWhisper, isEncrypting: fheEncrypting } = useFhevmEncrypt();
 
   const [body, setBody] = useState("");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
+  const [isUrgent, setIsUrgent] = useState(false);
   const [refId, setRefId] = useState("");
   const [expandedWhisper, setExpandedWhisper] = useState<string | null>(null);
+  const [onChainWhispers, setOnChainWhispers] = useState<WhisperRecord[]>([]);
+  const [rewardingWhisper, setRewardingWhisper] = useState<string | null>(null);
 
-  const isOwner = role === "journalist" && caseData?.reporterName === SIMULATED_JOURNALIST;
-  const whispers = MOCK_WHISPERS.filter((w) => w.caseId === id);
+  // File upload states
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedImageHash, setUploadedImageHash] = useState<string | null>(null);
+  const [attachmentInfo, setAttachmentInfo] = useState<{ name: string; type: string; size: string } | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState("");
+
+  React.useEffect(() => {
+    async function fetchCase() {
+      if (!caseManager || !id) return;
+
+      try {
+        setIsLoading(true);
+        console.log(`[CaseDetail] Fetching details for case ${id}...`);
+        const caseIdNum = id.replace('C-', '');
+        const c = await caseManager.getCase(caseIdNum);
+
+        setCaseData({
+          id: id,
+          title: c.title,
+          status: c.status as any,
+          priority: c.priority as any,
+          whispers: Number(c.whisperCount),
+          created: new Date(Number(c.createdAt) * 1000).toISOString().slice(0, 10),
+          tags: [...c.tags],
+          background: c.description,
+          whisperBrief: c.whisperBrief,
+          prizePool: parseFloat(ethers.formatEther(c.prizePool)),
+          reporterName: c.journalist,
+          isAnonymous: c.journalist === "0x0000000000000000000000000000000000000000",
+        });
+      } catch (err) {
+        console.error("[CaseDetail] Error fetching case detail:", err);
+        // Fallback to mock if not found on chain
+        const mock = MOCK_CASES.find((c) => c.id === id);
+        if (mock) setCaseData(mock);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    async function fetchWhispers() {
+      if (!vault || !id) return;
+      try {
+        const caseIdNum = BigInt(id.replace('C-', ''));
+
+        const CHUNK = 9_000;
+        const MAX_LOOKBACK = 100_000;
+
+        const provider = vault.runner?.provider as any;
+        const latestBlock: number = await provider.getBlockNumber();
+        const startBlock = Math.max(0, latestBlock - MAX_LOOKBACK);
+
+        const filter = vault.filters.WhisperSubmitted(caseIdNum);
+        let allEvents: any[] = [];
+
+        for (let from = startBlock; from <= latestBlock; from += CHUNK) {
+          const to = Math.min(from + CHUNK - 1, latestBlock);
+          let retries = 3;
+          while (retries > 0) {
+            try {
+              const chunk = await vault.queryFilter(filter, from, to);
+              allEvents = allEvents.concat(chunk);
+              break;
+            } catch (err: any) {
+              retries--;
+              if (retries === 0) {
+                console.warn(`[CaseDetail] Failed to fetch chunk ${from}-${to}:`, err.message);
+              } else {
+                await new Promise(r => setTimeout(r, 1000));
+              }
+            }
+          }
+        }
+
+        console.log(`[CaseDetail] Found ${allEvents.length} WhisperSubmitted events for case ${caseIdNum}.`);
+
+        const fetched: WhisperRecord[] = allEvents.map((evt: any) => {
+          const whisperIndex = Number(evt.args?.whisperIndex);
+          const blockNum = evt.blockNumber ?? 0;
+          return {
+            id: `W-ON-${whisperIndex}`,
+            caseId: id,
+            content: "🔒 Encrypted Transmission",
+            timestamp: `Block #${blockNum}`,
+            status: "unread" as any,
+            isUrgent: false,
+            attachments: [],
+            // Extension for on-chain tracking
+            onChainIndex: whisperIndex
+          };
+        });
+
+        setOnChainWhispers(fetched);
+      } catch (err) {
+        console.error("[CaseDetail] Error fetching whispers via events:", err);
+      }
+    }
+
+    fetchCase();
+    fetchWhispers();
+  }, [caseManager, vault, id]);
+
+  const { decryptHandle, isDecrypting: isFheDecrypting } = useFhevmDecrypt();
+  const [validatingWhisper, setValidatingWhisper] = useState<string | null>(null);
+
+  const handleValidate = async (w: WhisperRecord) => {
+    if (!vault || !address || w.onChainIndex === undefined) {
+      toast.error("Wallet connection or contract not ready.");
+      return;
+    }
+
+    // Defensive check: Ensure we have a signer-backed contract
+    const runner = vault.runner;
+    const isSigner = runner && typeof (runner as any).sendTransaction === 'function';
+    
+    if (!isSigner) {
+      console.error("[CaseDetail] Vault runner is not a signer:", runner);
+      toast.error("Contract is in read-only mode. Please ensure your wallet is connected to the correct network.");
+      return;
+    }
+
+    const toastId = toast.loading("🔓 Revealing Whisper Content...");
+    setValidatingWhisper(w.id);
+
+    try {
+      const caseIdNum = BigInt(id.replace('C-', ''));
+
+      console.log(`[CaseDetail] Requesting reveal for case ${caseIdNum}, whisper ${w.onChainIndex}...`);
+
+      // 1. Request reveal on-chain (makes handle publicly decryptable)
+      const tx = await vault.requestWhisperReveal(caseIdNum, w.onChainIndex);
+      toast.update(toastId, { render: "Waiting for blockchain approval...", type: "info" });
+      const receipt = await tx.wait();
+
+      if (!receipt) throw new Error("Transaction failed or was dropped.");
+
+      // 2. Extract the handle from the event
+      const revealEvent = receipt.logs
+        .map((log: any) => {
+          try { return vault.interface.parseLog(log); } catch (e) { return null; }
+        })
+        .find((e: any) => e && e.name === "WhisperRevealRequested");
+
+      if (!revealEvent) {
+        console.error("[CaseDetail] Reveal event not found in logs:", receipt.logs);
+        throw new Error("Could not extract reveal handle from transaction events.");
+      }
+      
+      const messageHandle = revealEvent.args.messageHandle;
+      console.log("[CaseDetail] Extracted message handle:", messageHandle);
+
+      // 3. Use FHEVM to decrypt the handle
+      toast.update(toastId, { render: "Decrypting at secure terminal...", type: "info" });
+      const decryptedBigInt = await decryptHandle(messageHandle, ADDRESSES.WhisperVault);
+
+      if (decryptedBigInt === null) throw new Error("FHE Decryption failed at the secure terminal.");
+
+      // 4. Convert BigInt to string
+      // In ZamaPlay, strings are usually padded to 32 bytes (256 bits)
+      const hex = decryptedBigInt.toString(16).padStart(64, '0');
+      const bytes = ethers.getBytes("0x" + hex);
+      const decodedText = new TextDecoder().decode(bytes).replace(/\0/g, '');
+
+      console.log("[CaseDetail] Decrypted text:", decodedText);
+
+      // 5. Update local state
+      setOnChainWhispers(prev => prev.map(item =>
+        item.id === w.id ? { ...item, content: decodedText, status: 'reviewed' as any } : item
+      ));
+
+      toast.update(toastId, {
+        render: "Whisper validated and decrypted! ✅",
+        type: "success",
+        isLoading: false,
+        autoClose: 3000
+      });
+    } catch (err: any) {
+      console.error("[CaseDetail] Validation failed:", err);
+      toast.update(toastId, {
+        render: `Failed to decrypt: ${err.reason || err.message || "Unknown error"}`,
+        type: "error",
+        isLoading: false,
+        autoClose: 5000
+      });
+    } finally {
+      setValidatingWhisper(null);
+    }
+  };
+
+  const isOwner = role === "journalist" && (
+    caseData?.reporterName?.toLowerCase() === address?.toLowerCase() ||
+    caseData?.reporterName === SIMULATED_JOURNALIST
+  );
+
+  // Combine mock and on-chain whispers
+  const mockWhispers = MOCK_WHISPERS.filter((w) => w.caseId === id);
+  const whispers = [...onChainWhispers, ...mockWhispers];
+
+  if (isLoading) {
+    return (
+      <DashboardLayout pageTitle="Loading Case...">
+        <div className="flex flex-col items-center justify-center py-32 gap-4">
+          <Loader2 className="animate-spin text-primary" size={40} />
+          <p className="text-text-secondary text-xs font-bold uppercase tracking-widest">Bridging Secure Data...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (!caseData) {
     return (
@@ -48,14 +273,204 @@ export default function CaseDetailPage() {
     );
   }
 
-  const handleSubmit = () => {
-    if (!body.trim()) return;
+  const handleFilesChange = async (files: File[]) => {
+    const file = files[0];
+    if (file) {
+      try {
+        setIsUploading(true);
+        setUploadedFileName(file.name);
+
+        const toastId = toast.info("Uploading to Cloudinary...", { autoClose: false });
+
+        const base64 = await convertFileToBase64(file);
+        if (base64) {
+          const url = await uploadBase64Image(base64);
+          if (url) {
+            setUploadedImageHash(url);
+            setAttachmentInfo({
+              name: file.name,
+              type: url, // Storing the Cloudinary URL in the fileType field as requested
+              size: (file.size / 1024).toFixed(1) + " KB"
+            });
+            toast.update(toastId, {
+              render: "Image uploaded successfully! ✅",
+              type: "success",
+              autoClose: 3000
+            });
+          }
+        }
+      } catch (error) {
+        console.error("[Upload] Error:", error);
+        toast.error("Failed to upload image. Please try again.");
+        setUploadedFileName("");
+      } finally {
+        setIsUploading(false);
+      }
+    }
+  };
+
+  const handleSubmit = async () => {
+    console.log("sstartiing")
+    if (!body.trim() || !vault || !address) return;
+
     setSubmitState("submitting");
-    // Simulate network + encryption delay
-    setTimeout(() => {
+    const toastId = toast.loading("🔒 Encrypting & Submitting...");
+
+    try {
+      // 1. Prepare encryption values
+      const msgBytes = new TextEncoder().encode(body.trim());
+      const msgPadded = new Uint8Array(32);
+      msgPadded.set(msgBytes.slice(0, 32));
+      const msgBigInt = BigInt("0x" + Array.from(msgPadded).map(b => b.toString(16).padStart(2, "0")).join(""));
+
+      let fileHashBigInt = BigInt(0);
+      if (uploadedImageHash) {
+        // Hash the Cloudinary URL to a 256-bit value for FHE encryption
+        const urlHash = ethers.id(uploadedImageHash);
+        fileHashBigInt = BigInt(urlHash);
+      }
+
+      // 2. Encrypt
+      const encrypted = await encryptWhisper(
+        msgBigInt,
+        fileHashBigInt,
+        address as `0x${string}`,
+        isUrgent ? 1 : 0,
+        ADDRESSES.WhisperVault
+      );
+
+      if (!encrypted) throw new Error("Encryption failed");
+
+      // 3. Submit to contract
+      const caseIdNum = BigInt(id.replace('C-', ''));
+
+      const tx = await vault.submitWhisper(
+        caseIdNum,
+        "unread",
+        isUrgent,
+        uploadedImageHash && attachmentInfo ? [{
+          name: attachmentInfo.name,
+          fileType: attachmentInfo.type, // This now contains the URL
+          size: attachmentInfo.size
+        }] : [],
+        encrypted.handles[0],
+        encrypted.handles[1],
+        encrypted.handles[2],
+        encrypted.handles[3],
+        encrypted.inputProof
+      );
+
+      toast.update(toastId, { render: "Mining transaction...", type: "info" });
+      await tx.wait();
+
       setRefId(`W-${Math.floor(Math.random() * 9000 + 1000)}`);
       setSubmitState("waiting");
-    }, 2200);
+      toast.update(toastId, {
+        render: (
+          <div className="flex flex-col gap-1">
+            <span className="font-bold text-xs">Whisper logged on-chain! ✅</span>
+            <a
+              href={`https://sepolia.etherscan.io/tx/${tx.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white underline text-[10px] hover:text-primary transition-colors"
+            >
+              View on Explorer
+            </a>
+          </div>
+        ),
+        type: "success",
+        isLoading: false,
+        autoClose: 7000
+      });
+    } catch (error: any) {
+      console.error("[CaseDetail] Submission failed:", error);
+      toast.update(toastId, { render: error.message || "Submission failed", type: "error", isLoading: false, autoClose: 5000 });
+      setSubmitState("idle");
+    }
+  };
+
+
+  const handleReward = async (w: WhisperRecord) => {
+    if (!vault || !rewardManager || !address || w.onChainIndex === undefined) {
+      toast.error("Wallet connection or contract not ready.");
+      return;
+    }
+
+    const toastId = toast.loading("💡 Initializing Reward Sequence...");
+    setRewardingWhisper(w.id);
+
+    try {
+      const caseIdNum = BigInt(id.replace('C-', ''));
+
+      // 1. Check if reward is already approved
+      const rewardInfo = await rewardManager.rewards(caseIdNum);
+      if (!rewardInfo.approved) {
+        toast.update(toastId, { render: "Locking confidential reward amount...", type: "info" });
+        
+        // Encrypt amount (1000 as placeholder based on contract logic)
+        const encrypted = await encrypt256(BigInt(1000), ADDRESSES.RewardManager);
+        if (!encrypted) throw new Error("Encryption of reward amount failed.");
+
+        const txApprove = await rewardManager.approveReward(
+          caseIdNum,
+          encrypted.handles[0],
+          encrypted.inputProof
+        );
+        await txApprove.wait();
+        toast.update(toastId, { render: "Reward approved! Revealing recipient...", type: "info" });
+      }
+
+      // 2. Request Submitter Reveal on-chain
+      console.log(`[CaseDetail] Requesting submitter reveal for case ${caseIdNum}, whisper ${w.onChainIndex}...`);
+      const txReveal = await vault.requestSubmitterReveal(caseIdNum, w.onChainIndex);
+      toast.update(toastId, { render: "Unlocking source identity...", type: "info" });
+      const receiptReveal = await txReveal.wait();
+
+      if (!receiptReveal) throw new Error("Reveal transaction failed.");
+
+      // 3. Extract Submitter Handle from event
+      const revealEvent = receiptReveal.logs
+        .map((log: any) => {
+          try { return vault.interface.parseLog(log); } catch (e) { return null; }
+        })
+        .find((e: any) => e && e.name === "SubmitterRevealRequested");
+
+      if (!revealEvent) throw new Error("Could not extract identity handle.");
+      const submitterHandle = revealEvent.args.submitterHandle;
+
+      // 4. Decrypt the address
+      toast.update(toastId, { render: "Decrypting source address...", type: "info" });
+      const decryptedAddrBigInt = await decryptHandle(submitterHandle, ADDRESSES.WhisperVault);
+      if (!decryptedAddrBigInt) throw new Error("Failed to decrypt source address.");
+
+      const sourceAddress = ethers.getAddress("0x" + decryptedAddrBigInt.toString(16).padStart(40, '0'));
+      console.log("[CaseDetail] Decrypted source address:", sourceAddress);
+
+      // 5. Distribute Reward
+      toast.update(toastId, { render: "Executing reward distribution...", type: "info" });
+      // Note: In a real app, we might want to approve the reward first or let the manager handle it
+      // But based on the contract ABI, distributeReward seems to be the one
+      const txReward = await rewardManager.distributeReward(caseIdNum, sourceAddress);
+      await txReward.wait();
+
+      toast.update(toastId, {
+        render: "Reward successfully sent to source! 🏆",
+        type: "success",
+        isLoading: false,
+        autoClose: 5000
+      });
+    } catch (err: any) {
+      console.error("[CaseDetail] Reward failed:", err);
+      toast.update(toastId, {
+        render: `Reward failed: ${err.reason || err.message || "Unknown error"}`,
+        type: "error",
+        isLoading: false,
+        autoClose: 5000
+      });
+    } finally {
+      setRewardingWhisper(null);
+    }
   };
 
   const priorityColor =
@@ -96,7 +511,7 @@ export default function CaseDetailPage() {
                 <MessageSquare size={11} /> {caseData.whispers} whispers received
               </span>
               <span className="flex items-center gap-1.5 text-success font-bold">
-                <Gift size={11} /> ${caseData.prizePool.toLocaleString()} prize pool
+                <Gift size={11} /> {caseData.prizePool} ETH prize pool
               </span>
               <span className="flex items-center gap-1.5">
                 {caseData.isAnonymous ? (
@@ -171,7 +586,7 @@ export default function CaseDetailPage() {
                           <span className="font-mono text-[9px] text-[#555]">{w.id}</span>
                           {w.isUrgent && <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />}
                           <span className="text-white text-[11px] font-bold tracking-tight">
-                            {w.content.slice(0, 24)}...
+                            {w.status === 'reviewed' ? w.content : w.content.slice(0, 24) + "..."}
                           </span>
                         </div>
                         {expandedWhisper === w.id ? <ChevronUp size={12} className="text-primary" /> : <ChevronDown size={12} className="text-[#555]" />}
@@ -196,9 +611,14 @@ export default function CaseDetailPage() {
                                         <span className="text-[8px] text-[#555] tabular-nums">{a.size}</span>
                                       </div>
                                     </div>
-                                    <button className="text-[#555] group-hover:text-primary transition-colors">
+                                    <a
+                                      href={a.type.startsWith('http') ? a.type : '#'}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[#555] group-hover:text-primary transition-colors"
+                                    >
                                       <ExternalLink size={12} />
-                                    </button>
+                                    </a>
                                   </div>
                                 ))}
                               </div>
@@ -211,8 +631,43 @@ export default function CaseDetailPage() {
                               <span className="text-[9px] tabular-nums font-mono">{w.timestamp}</span>
                             </div>
                             <div className="flex gap-2">
-                              <Button variant="ghost" size="xs" className="h-7 text-[9px]">Flag</Button>
-                              <Button variant="primary" size="xs" className="h-7 text-[9px]">Validate</Button>
+                              {w.status === 'reviewed' && (
+                                <>
+                                  <Link href={`/dashboard/whispers/W-C-${id.replace('C-', '')}-${w.onChainIndex}`}>
+                                    <Button variant="ghost" size="xs" className="h-7 text-[9px] gap-1">
+                                      <Eye size={10} /> View
+                                    </Button>
+                                  </Link>
+                                  <Button 
+                                    variant="primary" 
+                                    size="xs" 
+                                    className="h-7 text-[9px] bg-success hover:bg-success/80 border-none gap-1"
+                                    disabled={rewardingWhisper === w.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReward(w);
+                                    }}
+                                  >
+                                    {rewardingWhisper === w.id ? <Loader2 size={10} className="animate-spin" /> : <Gift size={10} />}
+                                    Reward
+                                  </Button>
+                                </>
+                              )}
+                              {w.status !== 'reviewed' && (
+                                <Button
+                                  variant="primary"
+                                  size="xs"
+                                  className="h-7 text-[9px]"
+                                  disabled={validatingWhisper === w.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleValidate(w as any);
+                                  }}
+                                >
+                                  {validatingWhisper === w.id && <Loader2 size={10} className="animate-spin mr-1" />}
+                                  Validate
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -252,7 +707,7 @@ export default function CaseDetailPage() {
                   </div>
                   <div>
                     <p className="text-success text-[10px] font-bold uppercase tracking-widest">Prize Pool</p>
-                    <p className="text-white font-black text-2xl tabular-nums">${caseData.prizePool.toLocaleString()}</p>
+                    <p className="text-white font-black text-2xl tabular-nums">${Number(caseData.prizePool)}</p>
                   </div>
                 </div>
                 <p className="text-[#555] text-[9px] leading-relaxed text-right max-w-[100px] relative z-10 font-bold uppercase tracking-tight">
@@ -270,69 +725,118 @@ export default function CaseDetailPage() {
                     Whisper Received
                   </h3>
                   <p className="text-text-secondary text-[11px] leading-relaxed mb-5">
-                    Your submission has been encrypted and logged. The investigating team will review it shortly.
+                    Your transmission has been FHE-encrypted and committed to the blockchain vault.
                   </p>
-                  <div className="w-full bg-surface border border-border px-4 py-3 mb-5">
-                    <p className="text-[#555] text-[9px] uppercase tracking-widest mb-1 font-bold">Reference ID</p>
+                  <div className="w-full bg-[#1A1A1A] border border-border px-4 py-3 mb-5">
+                    <p className="text-[#555] text-[9px] uppercase tracking-widest mb-1 font-bold">Reference Receipt</p>
                     <p className="text-primary font-mono font-bold text-xl tracking-widest">{refId}</p>
-                    <p className="text-[#555] text-[9px] mt-1 font-bold uppercase tracking-tight">Secure copy saved to keychain.</p>
+                    <p className="text-[#555] text-[9px] mt-1 font-bold uppercase tracking-tight">Save this to follow up anonymously.</p>
                   </div>
                   <button
-                    onClick={() => { setSubmitState("idle"); setBody(""); setRefId(""); }}
+                    onClick={() => {
+                      setSubmitState("idle");
+                      setBody("");
+                      setRefId("");
+                      setUploadedImageHash(null);
+                      setUploadedFileName("");
+                      setAttachmentInfo(null);
+                    }}
                     className="mt-6 text-[#555] hover:text-white text-[10px] uppercase font-black tracking-widest transition-colors flex items-center gap-2"
                   >
                     <ArrowLeft size={10} /> Submit Another Whisper
                   </button>
                 </div>
-              ) : (
-                <Card title="Submit a Whisper" subtitle="Your identity is never stored">
-                  <div className="flex flex-col gap-4 pt-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-2 h-2 rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse" />
-                      <span className="text-success text-[10px] font-black uppercase tracking-widest">
-                        End-to-End Encrypted Tunnel Active
-                      </span>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[#555] text-[9px] font-black uppercase tracking-widest flex justify-between">
-                        Your Report <span>*</span>
-                      </label>
-                      <textarea
-                        value={body}
-                        onChange={(e) => setBody(e.target.value)}
-                        placeholder="Describe the leak or evidence. Be specific about dates and individuals..."
-                        rows={6}
-                        disabled={submitState === "submitting"}
-                        className="w-full bg-surface border border-border text-white text-xs p-3 placeholder:text-[#3A3A3A] resize-none focus:outline-none focus:border-primary transition-all leading-relaxed disabled:opacity-50"
+              ) : role !== "journalist" ? (
+                <Card title="Secure Submission" subtitle="End-to-End FHE Encryption Active">
+                  <div className="flex flex-col gap-8 pt-2">
+                    {/* Top: Files/Evidence */}
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Shield size={12} className="text-success" />
+                        <span className="text-success text-[10px] font-black uppercase tracking-widest">
+                          Source Evidence (Photos & Files)
+                        </span>
+                      </div>
+                      <FileUpload
+                        accept="image/*"
+                        maxMB={20}
+                        multiple={false}
+                        onFilesChange={handleFilesChange}
                       />
-                      <div className="flex justify-between items-center px-1">
-                        <span className="text-[9px] text-[#555] font-bold uppercase">Markdown Supported</span>
-                        <span className="text-primary text-[10px] tabular-nums font-mono">{body.length} chars</span>
+                      <div className="p-3 bg-white/[0.02] border border-dashed border-border flex items-center gap-3">
+                        <AlertTriangle size={12} className="text-warning shrink-0" />
+                        <p className="text-[#555] text-[9px] leading-relaxed uppercase font-bold tracking-tight">
+                          Photos are hashed and encrypted locally alongside your report for total privacy.
+                        </p>
                       </div>
                     </div>
-                    <div className="mt-1">
-                      <label className="text-[#555] text-[9px] font-black uppercase tracking-widest mb-2 block">
-                        Evidence Attachments <span className="text-[#333]">(PNG, PDF, ZIP)</span>
-                      </label>
-                      <FileUpload accept="image/*,application/pdf,.doc,.docx,.zip,.eml" maxMB={50} />
+
+                    {/* Bottom: Message & Submit */}
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse" />
+                          <span className="text-white text-[10px] font-black uppercase tracking-widest">
+                            Tunnel: Active
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={isUrgent}
+                            onChange={(e) => setIsUrgent(e.target.checked)}
+                            className="w-3 h-3 accent-error bg-transparent border-border"
+                          />
+                          <span className="text-error text-[10px] font-black uppercase tracking-widest group-hover:opacity-80 transition-opacity">Mark Urgent</span>
+                        </label>
+                      </div>
+
+                      <div className="relative">
+                        <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5 px-2 py-1 bg-[#6C5CE7]/10 border border-[#6C5CE7]/20">
+                          <span className="text-primary text-[8px] font-black uppercase">FHE Encrypted</span>
+                        </div>
+                        <textarea
+                          value={body}
+                          onChange={(e) => setBody(e.target.value)}
+                          placeholder="Provide the details of your findings here..."
+                          rows={6}
+                          disabled={submitState === "submitting" || isUploading}
+                          className="w-full bg-[#0A0A0A] border border-border text-white text-xs p-4 pt-10 placeholder:text-[#3A3A3A] resize-none focus:outline-none focus:border-primary transition-all leading-relaxed"
+                        />
+                      </div>
+
+                      <Button
+                        variant="primary"
+                        disabled={!body.trim() || submitState === "submitting" || isUploading}
+                        onClick={handleSubmit}
+                        className="w-full h-12 gap-3 uppercase font-black tracking-widest text-xs"
+                      >
+                        {submitState === "submitting" ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Transmitting Securely...
+                          </>
+                        ) : (
+                          <>
+                            <Shield size={14} />
+                            Encrypt & Transmit Whisper
+                          </>
+                        )}
+                      </Button>
                     </div>
-                    <div className="flex items-start gap-2 bg-warning/5 border border-warning/20 px-3 py-3 mt-1">
-                      <AlertTriangle size={12} className="text-warning shrink-0 mt-0.5" />
-                      <p className="text-text-secondary text-[9px] leading-relaxed font-medium">
-                        BY SUBMITTING YOU ATTEST TO THE ACCURACY OF THIS REPORT. REVEALING YOUR IDENTITY IN THE CONTENT VOIDS SYSTEM PROTECTIONS.
-                      </p>
-                    </div>
-                    <Button
-                      variant="primary"
-                      disabled={!body.trim() || submitState === "submitting"}
-                      loading={submitState === "submitting"}
-                      onClick={handleSubmit}
-                      className="w-full h-11 uppercase font-black tracking-widest text-xs mt-2"
-                    >
-                      {submitState === "submitting" ? "Encrypting & Transmitting..." : "Send Secure Whisper"}
-                    </Button>
                   </div>
                 </Card>
+              ) : (
+                <div className="bg-primary/5 border border-primary/25 p-5 relative">
+                  <div className="absolute top-0 left-0 w-1/4 h-0.5 bg-primary/40" />
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield size={12} className="text-primary" />
+                    <span className="text-primary text-[10px] font-bold uppercase tracking-widest">Journalist View</span>
+                  </div>
+                  <p className="text-text-secondary text-[10px] leading-relaxed">
+                    You are viewing this case as a lead journalist. Submissions from sources will appear in your intel matrix above.
+                  </p>
+                </div>
               )}
             </>
           )}
