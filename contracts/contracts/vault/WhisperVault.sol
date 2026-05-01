@@ -15,8 +15,13 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
     IAccessControlManager public immutable accessControl;
     IWhisperStats public stats;
 
+    struct GlobalRef {
+        uint256 caseId;
+        uint256 index;
+    }
+
     mapping(uint256 => Whisper[]) private caseWhispers;
-    Whisper[] private allWhispers;
+    GlobalRef[] private allWhispers;
 
     event WhisperSubmitted(uint256 indexed caseId, uint256 whisperIndex);
     event WhisperRevealRequested(uint256 indexed caseId, uint256 whisperIndex, bytes32 messageHandle);
@@ -64,6 +69,7 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
         FHE.allowThis(priorityEnc);
 
         // Add to case-specific mapping
+        uint256 whisperIndex = caseWhispers[caseId].length;
         Whisper storage newWhisper = caseWhispers[caseId].push();
         
         // Populate base data
@@ -81,15 +87,18 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
             newWhisper.attachments.push(attachments[i]);
         }
 
-        // Add to platform-wide list for global feed
-        allWhispers.push(newWhisper);
+        // Add to platform-wide list for global feed (as a reference)
+        allWhispers.push(GlobalRef({
+            caseId: caseId,
+            index: whisperIndex
+        }));
 
         // Update Stats
         if (address(stats) != address(0)) {
             stats.incrementWhispers(msg.sender);
         }
 
-        emit WhisperSubmitted(caseId, caseWhispers[caseId].length - 1);
+        emit WhisperSubmitted(caseId, whisperIndex);
     }
 
     /**
@@ -110,6 +119,7 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
         
         // Store new handle back in storage
         w.encryptedMessage = revealed;
+        w.status = "reviewed"; // Automatically update status
 
         // Grant permissions on the NEW handle
         FHE.allowThis(revealed);
@@ -159,6 +169,7 @@ contract WhisperVault is ZamaEthereumConfig, IWhisperVault {
     }
 
     function getGlobalWhisper(uint256 index) external view override returns (Whisper memory) {
-        return allWhispers[index];
+        GlobalRef memory ref = allWhispers[index];
+        return caseWhispers[ref.caseId][ref.index];
     }
 }

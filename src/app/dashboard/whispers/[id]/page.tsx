@@ -18,11 +18,13 @@ import Link from "next/link";
 import { useWhisperVault, useWhisperCaseManager, useRewardManager } from "@/hooks/useContracts";
 import { useFhevmDecrypt } from "@/hooks/useFhevmDecrypt";
 import { useFhevmEncrypt } from "@/hooks/useFhevmEncrypt";
+import { useAuth } from "@/lib/auth-context";
 import { ADDRESSES } from "@/constants/contracts";
 
 export default function WhisperDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { address } = useAccount();
+  const { role } = useAuth();
   const vault = useWhisperVault();
   const caseManager = useWhisperCaseManager();
   const { decryptHandle, isDecrypting } = useFhevmDecrypt();
@@ -317,27 +319,36 @@ export default function WhisperDetailPage() {
           </h2>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <Button variant="ghost" size="sm" onClick={() => setAssignOpen(true)}>
-            <Folder size={12} /> Link Case
-          </Button>
-          {whisperData.status === 'reviewed' && (
-            <Button
-              variant="primary"
-              size="sm"
-              className="bg-success hover:bg-success/80 border-none px-4"
-              disabled={rewardingWhisper}
-              onClick={handleReward}
-            >
-              {rewardingWhisper ? <Loader2 size={12} className="animate-spin mr-1" /> : <Gift size={12} className="mr-1" />}
-              Send Reward
-            </Button>
+          {role === "journalist" && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setAssignOpen(true)}>
+                <Folder size={12} /> Link Case
+              </Button>
+              {whisperData.status === 'reviewed' && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="bg-success hover:bg-success/80 border-none px-4"
+                  disabled={rewardingWhisper}
+                  onClick={handleReward}
+                >
+                  {rewardingWhisper ? <Loader2 size={12} className="animate-spin mr-1" /> : <Gift size={12} className="mr-1" />}
+                  Send Reward
+                </Button>
+              )}
+              <Button variant="primary" size="sm"
+                disabled={isRevealing || whisperData.status === 'reviewed'}
+                onClick={handleReveal}
+              >
+                {isRevealing ? <Loader2 size={12} className="animate-spin mr-1" /> : (whisperData.status === 'reviewed' ? "Validated" : "Validate & Reveal")}
+              </Button>
+            </>
           )}
-          <Button variant="primary" size="sm"
-            disabled={isRevealing || whisperData.status === 'reviewed'}
-            onClick={handleReveal}
-          >
-            {isRevealing ? <Loader2 size={12} className="animate-spin mr-1" /> : (whisperData.status === 'reviewed' ? "Validated" : "Validate & Reveal")}
-          </Button>
+          {role === "whisperer" && (
+            <Badge variant="outline" className="px-3 py-1 border-border/50 text-[#A1A1AA]">
+              View Only Mode
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -346,10 +357,16 @@ export default function WhisperDetailPage() {
           <Card variant="secure" title="Whisper Content">
             <div className={`flex items-center gap-2 mb-4 text-[10px] font-bold uppercase tracking-widest ${whisperData.status === 'reviewed' ? 'text-success' : 'text-warning'}`}>
               <Shield size={10} className="flex-shrink-0" />
-              <span>{whisperData.status === 'reviewed' ? 'Fully revealed at secure terminal' : 'Content is end-to-end encrypted'}</span>
+              <span>
+                {role === "whisperer" 
+                  ? "End-to-End Encrypted for Investigation" 
+                  : (whisperData.status === 'reviewed' ? 'Fully revealed at secure terminal' : 'Content is end-to-end encrypted')}
+              </span>
             </div>
             <div className="text-[#A1A1AA] text-sm leading-relaxed whitespace-pre-line bg-surface/50 p-4 border border-border/30 italic">
-              "{whisperData.content}"
+              {role === "whisperer" 
+                ? "This content is currently locked in the FHE vault. You will see status updates here as journalists review your evidence."
+                : `"${whisperData.content}"`}
             </div>
           </Card>
 
@@ -397,7 +414,7 @@ export default function WhisperDetailPage() {
           <Card title="Metadata">
             {[
               { icon: <Clock size={12} />, label: "Received", value: whisperData.timestamp },
-              { icon: <User size={12} />, label: "Source", value: "Anonymous" },
+              { icon: <User size={12} />, label: "Source", value: role === "whisperer" ? "Your Submission" : "Anonymous" },
               { icon: <Link2 size={12} />, label: "Linked Case", value: caseTitle },
             ].map((row) => (
               <div key={row.label} className="flex items-start gap-3 py-2.5 border-b border-[#1E1E1E] last:border-0">

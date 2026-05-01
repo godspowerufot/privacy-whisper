@@ -11,6 +11,8 @@ import { Search, Plus, MessageSquare, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useWhisperCaseManager, useWhisperVault } from "@/hooks/useContracts";
+import { useAuth } from "@/lib/auth-context";
+import { ethers } from "ethers";
 
 interface Whisper {
   id: string;
@@ -60,6 +62,7 @@ export default function WhispersPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const { address } = useAccount();
+  const { role } = useAuth();
   const caseManager = useWhisperCaseManager();
   const vault = useWhisperVault();
 
@@ -88,16 +91,30 @@ export default function WhispersPage() {
       for (let i = 0; i < Number(totalWhispers); i++) {
         try {
           const w = await vault.getGlobalWhisper(i);
-          chainWhispers.push({
-            id: `W-G-${i}`,
-            title: `Intel Packet #${i}`,
-            status: w.status || "unread",
-            source: "Anonymous Submission",
-            caseId: w.caseId.toString(),
-            caseTitle: caseTitles[w.caseId.toString()] || `Case #${w.caseId}`,
-            received: new Date(Number(w.timestamp) * 1000).toISOString().slice(0, 10),
-            isUrgent: w.isUrgent,
-          });
+          
+          // Role-based filtering: Whisperers only see their own hashes
+          const senderHash = w.senderHash;
+          let shouldShow = role === "journalist" || role === "admin";
+          
+          if (role === "whisperer" && address) {
+            const userHash = ethers.keccak256(ethers.solidityPacked(["address"], [address]));
+            if (senderHash === userHash) {
+              shouldShow = true;
+            }
+          }
+
+          if (shouldShow) {
+            chainWhispers.push({
+              id: `W-G-${i}`,
+              title: `Intel Packet #${i}`,
+              status: w.status || "unread",
+              source: role === "whisperer" ? "Your Submission" : "Anonymous Submission",
+              caseId: w.caseId.toString(),
+              caseTitle: caseTitles[w.caseId.toString()] || `Case #${w.caseId}`,
+              received: new Date(Number(w.timestamp) * 1000).toISOString().slice(0, 10),
+              isUrgent: w.isUrgent,
+            });
+          }
         } catch (e) {
           console.warn(`[WhispersPage] Failed to fetch global whisper ${i}:`, e);
         }

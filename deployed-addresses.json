@@ -1,37 +1,37 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployedAt": "2026-04-29T20:41:33.586Z",
+  "deployedAt": "2026-05-01T08:00:17.733Z",
   "deployer": "0xCee4C135972866AB8cD062C3F20feA4e550FAd06",
   "contracts": {
     "AccessControlManager": {
-      "address": "0x5fa76f93b7A869e065c842FffA7e1D48641b7721",
-      "txHash": "0xcebeb54628d6f66b73521fd8c924df0e5ee7bcc2e84c64779c0188684831bc37",
+      "address": "0x86C9C9C183B9856E38F6e321509E5DFdC5b1Bcad",
+      "txHash": "0xf0779ad01742c529c722b41c4a177bc5e9a59e5ac4cb8246dffe66f051a1128c",
       "newlyDeployed": true
     },
     "WhisperCaseManager": {
-      "address": "0xFc5161AF020e9BDbe43e63e2623daBB66DA3496E",
-      "txHash": "0xf46d77d57763bb63b43b144ed40b48b6d7261ee277ea8e5d4fbb1bc2d9cc075b",
+      "address": "0x67F370Df17370FB1e26Fb5aEEE16E51Be67D4f0A",
+      "txHash": "0x67ead8eb47902d9c49cd91bc5a6ed7a9421e9438e6bbf30133280bdfbec009f6",
       "newlyDeployed": true
     },
     "AuditTrail": {
-      "address": "0x175CB366fE729a1F24949B50477bca9aDBaF9c58",
-      "txHash": "0xf72de6c386726faa8236f235f166a6e5598774a0ce4f6d176b93ade592926def",
+      "address": "0xF3a1881F4dCC925b1fEc73973217E399b11597A3",
+      "txHash": "0x74b67e55d4fc36c742eb8ca57ef82ca63f70725d564af8048e9fd26ebd0c93ab",
       "newlyDeployed": true
     },
     "WhisperStats": {
-      "address": "0x7ab37E894ef821544f2b339fc9eb6793d8170660",
-      "txHash": "0x9cb69311b7cfc644b9cbc908505a92d2ad8079f6edba069eb4d395781c279d61",
+      "address": "0x4cC637F1054926F54eb348eC6CBFaf2790E372cb",
+      "txHash": "0x26c4852e16705e89c5b68c88c400d11ec16cfd18be231747f0a2fe9b92b437af",
       "newlyDeployed": true
     },
     "WhisperVault": {
-      "address": "0x12d0CEEee07F6d6E1512e6B22d100EAC000Df58a",
-      "txHash": "0x26fc5ebfd2f30aa40a47415d419f98d65482033ff843ce6580c9025bff38514f",
+      "address": "0x8A39730C6260aE1E78E7F9b575A65a6a7501cedD",
+      "txHash": "0xee67a8f022f1c0b980993fca8ba88f14a83c7d2fc8c183df2fc149c4ae105bd3",
       "newlyDeployed": true
     },
     "RewardManager": {
-      "address": "0xB4C5d17A24Abaa3274CFA4AF1d55C84e260e2f39",
-      "txHash": "0x9cb892e0ba628f1da54f8c430c12dcc0248f5ba5a1aef20766d921d03dfbe0d4",
+      "address": "0x9c50A63A3c0EA47a371c73B53A6A1F3C2F599Ce7",
+      "txHash": "0x498959b7bd694f587d674691dc37d1f9f57d760cdfbba5cab76eb7f8b1901d51",
       "newlyDeployed": true
     }
   }

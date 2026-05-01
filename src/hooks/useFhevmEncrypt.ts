@@ -18,8 +18,8 @@ export interface EncryptedResult {
  * Convert Uint8Array to hex string
  */
 function uint8ArrayToHex(arr: Uint8Array): `0x${string}` {
-  return typeof arr === 'string' && (arr as string).startsWith('0x') 
-    ? (arr as string) as `0x${string}` 
+  return typeof arr === 'string' && (arr as string).startsWith('0x')
+    ? (arr as string) as `0x${string}`
     : toHex(arr);
 }
 
@@ -48,10 +48,10 @@ export function useFhevmEncrypt() {
       try {
         const encryptedInput = await instance.createEncryptedInput(contractAddress, address);
         const result = await encryptedInput.add256(value).encrypt();
-        
-        return { 
-          handles: result.handles.map(h => uint8ArrayToHex(h as Uint8Array)), 
-          inputProof: uint8ArrayToHex(result.inputProof as unknown as Uint8Array) 
+
+        return {
+          handles: result.handles.map((h: Uint8Array<ArrayBufferLike>) => uint8ArrayToHex(h as Uint8Array)),
+          inputProof: uint8ArrayToHex(result.inputProof as unknown as Uint8Array)
         };
       } catch (err) {
         console.error('[FHEVM] Encryption failed:', err);
@@ -87,9 +87,9 @@ export function useFhevmEncrypt() {
           .add8(priority)
           .encrypt();
 
-        return { 
-          handles: result.handles.map(h => uint8ArrayToHex(h as Uint8Array)), 
-          inputProof: uint8ArrayToHex(result.inputProof as unknown as Uint8Array) 
+        return {
+          handles: result.handles.map((h: Uint8Array<ArrayBufferLike>) => uint8ArrayToHex(h as Uint8Array)),
+          inputProof: uint8ArrayToHex(result.inputProof as unknown as Uint8Array)
         };
       } catch (err) {
         console.error('[FHEVM] Whisper encryption failed:', err);

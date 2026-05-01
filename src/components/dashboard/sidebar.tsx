@@ -26,8 +26,7 @@ const navItems = [
   { label: "Submit Tip", href: "/dashboard/cases", icon: MessageSquare, roles: ["whisperer"] },
   { label: "My Whispers", href: "/dashboard/whispers", icon: Shield, roles: ["whisperer"] },
   { label: "Rewards", href: "/dashboard/rewards", icon: Gift, roles: ["journalist", "whisperer"] },
-  { label: "Platform Feed", href: "/dashboard/feed", icon: Zap, roles: ["journalist", "whisperer", null] },
-  { label: "Settings", href: "/dashboard/settings", icon: Settings, roles: ["journalist", "whisperer", null] },
+
 ];
 
 interface SidebarProps {

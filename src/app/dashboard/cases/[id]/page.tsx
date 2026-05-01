@@ -41,7 +41,7 @@ export default function CaseDetailPage() {
   const caseManager = useWhisperCaseManager();
   const vault = useWhisperVault();
   const rewardManager = useRewardManager();
-  const { encryptWhisper, isEncrypting: fheEncrypting } = useFhevmEncrypt();
+  const { encryptWhisper, encrypt256, isEncrypting: fheEncrypting } = useFhevmEncrypt();
 
   const [body, setBody] = useState("");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
@@ -135,10 +135,9 @@ export default function CaseDetailPage() {
             caseId: id,
             content: "🔒 Encrypted Transmission",
             timestamp: `Block #${blockNum}`,
-            status: "unread" as any,
+            status: "unread",
             isUrgent: false,
             attachments: [],
-            // Extension for on-chain tracking
             onChainIndex: whisperIndex
           };
         });
@@ -165,7 +164,7 @@ export default function CaseDetailPage() {
     // Defensive check: Ensure we have a signer-backed contract
     const runner = vault.runner;
     const isSigner = runner && typeof (runner as any).sendTransaction === 'function';
-    
+
     if (!isSigner) {
       console.error("[CaseDetail] Vault runner is not a signer:", runner);
       toast.error("Contract is in read-only mode. Please ensure your wallet is connected to the correct network.");
@@ -198,7 +197,7 @@ export default function CaseDetailPage() {
         console.error("[CaseDetail] Reveal event not found in logs:", receipt.logs);
         throw new Error("Could not extract reveal handle from transaction events.");
       }
-      
+
       const messageHandle = revealEvent.args.messageHandle;
       console.log("[CaseDetail] Extracted message handle:", messageHandle);
 
@@ -407,7 +406,7 @@ export default function CaseDetailPage() {
       const rewardInfo = await rewardManager.rewards(caseIdNum);
       if (!rewardInfo.approved) {
         toast.update(toastId, { render: "Locking confidential reward amount...", type: "info" });
-        
+
         // Encrypt amount (1000 as placeholder based on contract logic)
         const encrypted = await encrypt256(BigInt(1000), ADDRESSES.RewardManager);
         if (!encrypted) throw new Error("Encryption of reward amount failed.");
@@ -638,9 +637,9 @@ export default function CaseDetailPage() {
                                       <Eye size={10} /> View
                                     </Button>
                                   </Link>
-                                  <Button 
-                                    variant="primary" 
-                                    size="xs" 
+                                  <Button
+                                    variant="primary"
+                                    size="xs"
                                     className="h-7 text-[9px] bg-success hover:bg-success/80 border-none gap-1"
                                     disabled={rewardingWhisper === w.id}
                                     onClick={(e) => {

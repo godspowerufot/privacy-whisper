@@ -12,6 +12,8 @@ export interface WhisperRecord {
   attachments: WhisperAttachment[];
   status: "unread" | "reviewed" | "flagged";
   isUrgent: boolean;
+  onChainIndex?: number;
+  isAnonymous?: boolean;
 }
 
 export const MOCK_WHISPERS: WhisperRecord[] = [
@@ -57,7 +59,7 @@ export const MOCK_WHISPERS: WhisperRecord[] = [
     status: "reviewed",
     isAnonymous: true,
     isUrgent: false
-  } as any, // Temporary fix for missing isAnonymous in type if needed, but type doesn't have it
+  },
   
   // Whispers for C-013 (Police Misconduct - Owner: Marcus Webb)
   {
